@@ -19,8 +19,9 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -38,9 +39,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,7 +52,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,10 +66,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -293,6 +293,7 @@ data class SpeakingProfile(
 
 sealed class TeleprompterMode {
     object Setup : TeleprompterMode()
+    object Vocab : TeleprompterMode()      // FIX 2: Step 1
     object Reading : TeleprompterMode()
     object Replica : TeleprompterMode()
 }
@@ -399,10 +400,19 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 replayTrigger = _state.value.replayTrigger + 1
             )}
 
-            is TpIntent.ProcessReplicaVideo -> runOfflineAI(intent.uri, intent.appFilesDir)
+            is TpIntent.ProcessReplicaVideo -> {
+                _state.update { it.copy(mode = TeleprompterMode.Vocab) } // FIX 2: Step 2
+                runOfflineAI(intent.uri, intent.appFilesDir)
+            }
             TpIntent.StartReplicaMode -> _state.update { it.copy(mode = TeleprompterMode.Replica, isPlaying = false) }
             is TpIntent.UpdateVideoTime -> _state.update { it.copy(currentVideoTimeMs = intent.timeMs) }
-            TpIntent.ResetReplicaEngine -> _state.update { it.copy(replicaPhase = ReplicaPhase.IDLE) }
+            TpIntent.ResetReplicaEngine -> _state.update {
+                it.copy(
+                    replicaPhase = ReplicaPhase.IDLE,
+                    engineDetails = "",
+                    mode = TeleprompterMode.Setup // FIX 2: Step 4
+                )
+            }
 
             TpIntent.NextVocabWord -> _state.update {
                 it.copy(
@@ -478,7 +488,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
-                    // Extracting natively bundled asset instead of HTTP download
                     _state.update { it.copy(engineDetails = "Unpacking bundled model…", engineProgress = 0.5f) }
                     ZipInputStream(app.assets.open(VOSK_MODEL_ZIP)).use { zis ->
                         var entry = zis.nextEntry
@@ -872,121 +881,130 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
     }
 
     MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
-        Box(modifier = Modifier.fillMaxSize().background(DeepForestGreen)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DeepForestGreen)
+                .statusBarsPadding() // FIX 1: Step 3
+                .navigationBarsPadding() // FIX 1: Step 3
+        ) {
 
-            Column(modifier = Modifier.fillMaxSize().padding(top = 16.dp)) {
-                SymmetricTopBar(title = "Teleprompter Studio")
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp)
+            ) {
+                item {
+                    SymmetricTopBar(title = "Teleprompter Studio")
+                }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                    contentPadding = PaddingValues(bottom = 20.dp)
-                ) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
+                        }
+
+                        Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
+
+                        // FIX 2: Step 6 - Removed conditional logic for Ready phase
+                        OutlinedButton(
+                            onClick = { videoPickerLauncher.launch("video/*") },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            border = BorderStroke(UltraThinBorder, SaturatedCrimson),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
+                            shape = RoundedCornerShape(6.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
-                                Spacer(modifier = Modifier.weight(1f))
-                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
-                            }
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
+                        }
 
-                            Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
-
-                            if (state.replicaPhase == ReplicaPhase.READY && state.syncedScript.isNotEmpty()) {
-                                PrimaryCrimsonButton(
-                                    text = "Launch Split-Screen Replica",
-                                    onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                OutlinedButton(
-                                    onClick = {
-                                        viewModel.dispatch(TpIntent.ResetReplicaEngine)
-                                        videoPickerLauncher.launch("video/*")
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                                    border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.5f)),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldenrodYellow.copy(alpha = 0.7f)),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        if (state.replicaPhase == ReplicaPhase.ERROR) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF3D1E1E))
+                                    .padding(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = "Try a Different Video", fontSize = 12.sp, fontFamily = TpTheme.fonts)
+                                    Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
-                            } else {
-                                OutlinedButton(
-                                    onClick = { videoPickerLauncher.launch("video/*") },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    border = BorderStroke(UltraThinBorder, SaturatedCrimson),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
+                                Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+
+                                if (state.engineDetails.isNotBlank()) {
+                                    Text(
+                                        text = state.engineDetails,
+                                        color = SoftWarmWhite.copy(alpha = 0.6f),
+                                        fontFamily = TpTheme.fonts,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
                                 }
                             }
                         }
                     }
+                }
 
-                    item {
-                        Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = state.scriptText,
-                            onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
-                            modifier = Modifier.fillMaxWidth().height(140.dp),
-                            placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
-                            textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
-                                focusedBorderColor = GoldenrodYellow,
-                                cursorColor = GoldenrodYellow
-                            ),
-                            shape = RoundedCornerShape(6.dp)
+                item {
+                    Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = state.scriptText,
+                        onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
+                        modifier = Modifier.fillMaxWidth().height(140.dp).padding(horizontal = 20.dp),
+                        placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
+                        textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
+                            focusedBorderColor = GoldenrodYellow,
+                            cursorColor = GoldenrodYellow
+                        ),
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f))).background(CardForestGreen).clickable { viewModel.dispatch(TpIntent.ToggleCameraPermission) }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Picture-in-Picture Monitor", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GoldenrodYellow)
+                            Text(text = "Record yourself while reading to check your framing and performance.", fontSize = 11.sp, color = SoftWarmWhite.copy(alpha = 0.6f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(top = 4.dp))
+                        }
+                        Switch(
+                            checked = state.isCameraPermitted,
+                            onCheckedChange = { viewModel.dispatch(TpIntent.ToggleCameraPermission) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = DeepForestGreen,
+                                checkedTrackColor = GoldenrodYellow,
+                                uncheckedThumbColor = SoftWarmWhite,
+                                uncheckedTrackColor = CardForestGreen
+                            )
                         )
                     }
+                }
 
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f))).background(CardForestGreen).clickable { viewModel.dispatch(TpIntent.ToggleCameraPermission) }.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Picture-in-Picture Monitor", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GoldenrodYellow)
-                                Text(text = "Record yourself while reading to check your framing and performance.", fontSize = 11.sp, color = SoftWarmWhite.copy(alpha = 0.6f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(top = 4.dp))
-                            }
-                            Switch(
-                                checked = state.isCameraPermitted,
-                                onCheckedChange = { viewModel.dispatch(TpIntent.ToggleCameraPermission) },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = DeepForestGreen,
-                                    checkedTrackColor = GoldenrodYellow,
-                                    uncheckedThumbColor = SoftWarmWhite,
-                                    uncheckedTrackColor = CardForestGreen
-                                )
-                            )
-                        }
+                item {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
+                        PrimaryCrimsonButton(text = "Start Manual Teleprompter →", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
                     }
                 }
-
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
-                    PrimaryCrimsonButton(text = "Start Manual Teleprompter →", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
-                }
-            }
-
-            if (state.replicaPhase != ReplicaPhase.IDLE && state.replicaPhase != ReplicaPhase.READY) {
-                VocabLoadingScreen(state = state, viewModel = viewModel)
-            } else if (state.replicaPhase == ReplicaPhase.READY && !state.transcriptionReadyDismissed) {
-                VocabLoadingScreen(state = state, viewModel = viewModel)
             }
         }
     }
 }
 
 @Composable
-fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
+fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) { // FIX 2: Step 7 - added as top level screen
     val vocabWord = VOCAB_WORDS[state.currentVocabIndex % VOCAB_WORDS.size]
 
     val mcqOptions = remember(state.currentVocabIndex) {
@@ -1001,117 +1019,113 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
         else           -> SoftWarmWhite
     }
 
+    var vocabFontSize by remember { mutableStateOf(48.sp) }
+    var pronunFontSize by remember { mutableStateOf(16.sp) }
+
+    LaunchedEffect(vocabWord.word) {
+        vocabFontSize = 48.sp
+        pronunFontSize = 16.sp
+    }
+
     MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
-        Box(modifier = Modifier.fillMaxSize().background(DeepForestGreen)) {
-
-            Column(modifier = Modifier.fillMaxSize()) {
-
-                if (state.replicaPhase != ReplicaPhase.READY) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .background(CardForestGreen)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(state.engineProgress.coerceIn(0f, 1f))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(SaturatedCrimson, GoldenrodYellow)
-                                    )
-                                )
-                        )
-                    }
-                }
-
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DeepForestGreen)
+                .statusBarsPadding() // FIX 1: Step 3
+                .navigationBarsPadding() // FIX 1: Step 3
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // FIX 2: Step 7 - Cancel button
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    if (state.replicaPhase == ReplicaPhase.READY) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF7BC47F),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Video Transcribed!",
-                                color = Color(0xFF7BC47F),
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    } else {
+                    TextButton(onClick = {
+                        viewModel.dispatch(TpIntent.ResetReplicaEngine)
+                    }) {
                         Text(
-                            text = state.statusMessage.uppercase(),
-                            color = GoldenrodYellow.copy(alpha = 0.7f),
-                            fontFamily = FontFamily.SansSerif,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            text = "${(state.engineProgress * 100).toInt()}%",
-                            color = SoftWarmWhite.copy(alpha = 0.5f),
-                            fontFamily = FontFamily.SansSerif,
-                            fontSize = 11.sp
+                            text = "✕ Cancel",
+                            color = SoftWarmWhite.copy(alpha = 0.4f),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.SansSerif
                         )
                     }
                 }
 
-                if (state.replicaPhase == ReplicaPhase.READY) {
+                if (state.replicaPhase != ReplicaPhase.READY && state.replicaPhase != ReplicaPhase.ERROR) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                    val alpha by infiniteTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "alpha"
+                    )
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(
-                                BorderStroke(UltraThinBorder, Color(0xFF7BC47F).copy(alpha = 0.5f)),
-                                RoundedCornerShape(12.dp)
-                            )
+                            .clip(RoundedCornerShape(8.dp))
                             .background(CardForestGreen)
-                            .padding(20.dp)
+                            .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
+                            .padding(12.dp)
                     ) {
-                        Text(
-                            text = state.engineDetails,
-                            color = SoftWarmWhite.copy(alpha = 0.7f),
-                            fontFamily = TpTheme.fonts,
-                            fontSize = 13.sp
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        PrimaryCrimsonButton(
-                            text = "Launch Teleprompter →",
-                            onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) },
-                            modifier = Modifier.fillMaxWidth().height(40.dp),
-                            border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.4f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldenrodYellow.copy(alpha = 0.6f)),
-                            shape = RoundedCornerShape(6.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(text = "Show More Words First", fontSize = 12.sp, fontFamily = TpTheme.fonts)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(GoldenrodYellow.copy(alpha = alpha)))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Transcribing your video… solve a word while you wait",
+                                    color = GoldenrodYellow,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                text = state.statusMessage,
+                                color = SoftWarmWhite.copy(alpha = 0.8f),
+                                fontSize = 10.sp,
+                                fontFamily = TpTheme.fonts
+                            )
+                            Text(
+                                text = "${(state.engineProgress * 100).toInt()}%",
+                                color = SoftWarmWhite.copy(alpha = 0.8f),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.SansSerif
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { state.engineProgress.coerceIn(0f, 1f) },
+                            color = SaturatedCrimson,
+                            trackColor = DeepForestGreen,
+                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                        )
                     }
-                    Spacer(modifier = Modifier.height(20.dp))
                 }
 
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .padding(horizontal = 20.dp),
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(bottom = 100.dp)
                 ) {
@@ -1163,15 +1177,23 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                 color = SoftWarmWhite,
                                 fontFamily = TpTheme.fonts,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 40.sp,
-                                letterSpacing = (-0.5).sp
+                                fontSize = vocabFontSize,
+                                letterSpacing = (-0.5).sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Visible,
+                                onTextLayout = { result ->
+                                    if (result.hasVisualOverflow && vocabFontSize > 24.sp) {
+                                        vocabFontSize = (vocabFontSize.value * 0.9f).sp
+                                        pronunFontSize = max(12f, vocabFontSize.value * 0.35f).sp
+                                    }
+                                }
                             )
 
                             Text(
                                 text = vocabWord.pronunciation,
                                 color = categoryColor.copy(alpha = 0.8f),
                                 fontFamily = FontFamily.SansSerif,
-                                fontSize = 13.sp,
+                                fontSize = pronunFontSize,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         }
@@ -1330,6 +1352,53 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                         text = "Launch Teleprompter →",
                         onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
                     )
+                }
+            }
+
+            if (state.replicaPhase == ReplicaPhase.READY && !state.transcriptionReadyDismissed) {
+                Dialog(
+                    onDismissRequest = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(CardForestGreen)
+                            .border(BorderStroke(UltraThinBorder, Color(0xFF7BC47F).copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = GoldenrodYellow,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Video Transcribed!",
+                                color = GoldenrodYellow,
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = state.engineDetails,
+                                color = SoftWarmWhite,
+                                fontFamily = TpTheme.fonts,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrimaryCrimsonButton(
+                                text = "OK",
+                                onClick = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1571,6 +1640,8 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // FIX 1: Step 3 - Add navigationBarsPadding here
+            .navigationBarsPadding()
             .padding(bottom = 20.dp, start = 20.dp, end = 20.dp)
             .graphicsLayer { alpha = currentAlpha; translationY = (1f - currentAlpha) * 100f }
             .background(StageNearBlackGreen),
@@ -1711,19 +1782,17 @@ fun TeleprompterApp() {
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    // FIX 1: Step 2 - Removed windowInsetsPadding(WindowInsets.systemBars) wrapper
     AnimatedContent(
         targetState = state.mode,
         label = "Flow Transition",
         transitionSpec = {
-            if (initialState == TeleprompterMode.Reading && targetState == TeleprompterMode.Setup) {
-                slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
-            } else {
-                slideInVertically { -it } + fadeIn() togetherWith slideOutVertically { it } + fadeOut()
-            }
+            slideInVertically { -it } + fadeIn() togetherWith slideOutVertically { it } + fadeOut() // FIX 2: Step 5
         }
     ) { mode ->
         when (mode) {
             TeleprompterMode.Setup -> SetupScreen(state, viewModel)
+            TeleprompterMode.Vocab -> VocabLoadingScreen(state, viewModel) // FIX 2: Step 5
             TeleprompterMode.Reading, TeleprompterMode.Replica -> StageScreen(state, viewModel)
         }
     }
@@ -1732,6 +1801,7 @@ fun TeleprompterApp() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             TeleprompterApp()
         }
