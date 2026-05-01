@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
-import kotlin.math.roundToInt // RE-ADDED: Critical for PiP camera drag math
+import kotlin.math.roundToInt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -66,6 +66,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -90,7 +91,7 @@ import org.vosk.Model
 import org.vosk.Recognizer
 
 // =================================================================================================
-// 1. ELITE DESIGN SYSTEM
+// 1. ELITE DESIGN SYSTEM & DATA
 // =================================================================================================
 
 val DeepForestGreen = Color(0xFF0F2B1F)
@@ -122,6 +123,119 @@ object TpTheme {
         primary = SaturatedCrimson
     )
 }
+
+data class VocabWord(
+    val word: String,
+    val pronunciation: String,
+    val partOfSpeech: String,
+    val definition: String,
+    val exampleSentence: String,
+    val wrongDefinitions: List<String>,
+    val category: String
+)
+
+val VOCAB_WORDS = listOf(
+    VocabWord("Perspicacious", "per·spi·CA·cious", "adjective",
+        "Having a ready insight; shrewd and discerning beyond ordinary perception",
+        "A perspicacious speaker always understands their audience before uttering a word.",
+        listOf("Speaking with unnecessary complexity", "Moving with graceful elegance", "Relating to royal ancestry"),
+        "Intellectual"),
+    VocabWord("Mellifluous", "mel·LIF·lu·ous", "adjective",
+        "Sweet or musical in tone; smooth and pleasant to hear, like honey flowing",
+        "Her mellifluous voice commanded the room without ever needing to rise above a whisper.",
+        listOf("Filled with nervous anxiety", "Excessively dramatic in speech", "Relating to mathematical precision"),
+        "Eloquent"),
+    VocabWord("Magnanimous", "mag·NAN·i·mous", "adjective",
+        "Generous and forgiving, especially toward a rival or less powerful person; noble of mind",
+        "The magnanimous king pardoned his enemies after victory, earning greater loyalty than conquest ever could.",
+        listOf("Extremely cautious and calculating", "Obsessed with personal appearance", "Stubbornly resistant to change"),
+        "Royal"),
+    VocabWord("Indefatigable", "in·de·FAT·i·ga·ble", "adjective",
+        "Persisting tirelessly; incapable of being fatigued regardless of difficulty or duration",
+        "Only an indefatigable orator could speak for three hours and leave the audience wanting more.",
+        listOf("Easily distracted by minor details", "Dependent on external validation", "Prone to emotional outbursts"),
+        "Powerful"),
+    VocabWord("Eloquent", "EL·o·quent", "adjective",
+        "Fluent and persuasive in speech; able to express ideas with clarity, power and beauty",
+        "An eloquent argument does not shout — it guides the listener to your conclusion as though it were their own.",
+        listOf("Technically precise but cold", "Overly dramatic and theatrical", "Speaking only in metaphors"),
+        "Eloquent"),
+    VocabWord("Sagacious", "sa·GA·cious", "adjective",
+        "Having or showing keen mental discernment and good judgement; profoundly wise",
+        "A sagacious communicator knows when silence speaks louder than any carefully chosen word.",
+        listOf("Overly confident without evidence", "Highly emotional in reasoning", "Focused purely on aesthetics"),
+        "Intellectual"),
+    VocabWord("Loquacious", "lo·QUA·cious", "adjective",
+        "Tending to talk a great deal; using more words than necessary, yet doing so with flair",
+        "The loquacious host filled every silence with anecdote, never allowing discomfort to settle.",
+        listOf("Refusing to speak publicly", "Speaking only in whispers", "Communicating through gesture alone"),
+        "Eloquent"),
+    VocabWord("Ebullient", "e·BUL·lient", "adjective",
+        "Cheerful and full of energy; overflowing with enthusiasm and high spirits",
+        "Her ebullient delivery transformed an ordinary script into a performance audiences remembered for years.",
+        listOf("Calm and deeply reserved", "Methodically slow in thinking", "Pessimistic about outcomes"),
+        "Powerful"),
+    VocabWord("Sanguine", "SAN·guine", "adjective",
+        "Optimistic, especially in a difficult situation; confidently positive about uncertain outcomes",
+        "Remain sanguine in front of the camera — the audience mirrors whatever energy the speaker projects.",
+        listOf("Deeply suspicious of others", "Overly cautious about risks", "Prone to self-doubt"),
+        "Royal"),
+    VocabWord("Erudite", "ER·u·dite", "adjective",
+        "Having or showing great knowledge or learning acquired through extensive study and curiosity",
+        "An erudite speaker earns authority not through volume but through the weight of what they know.",
+        listOf("Knowledgeable only in one narrow field", "Skilled primarily with hands", "Experienced through action alone"),
+        "Intellectual"),
+    VocabWord("Fastidious", "fas·TID·i·ous", "adjective",
+        "Very attentive to accuracy, detail and quality; difficult to please; meticulous to a fault",
+        "Be fastidious about your script — every unnecessary word is dead weight your audience must carry.",
+        listOf("Careless about personal appearance", "Easily satisfied with approximations", "Unwilling to review work"),
+        "Royal"),
+    VocabWord("Tenacious", "te·NA·cious", "adjective",
+        "Tending to keep a firm hold; not easily discouraged; persistent with extraordinary grip",
+        "A tenacious creator does not abandon their voice simply because the first ten videos underperformed.",
+        listOf("Easily swayed by popular opinion", "Quick to abandon difficult tasks", "Flexible to the point of inconsistency"),
+        "Powerful"),
+    VocabWord("Vivacious", "vi·VA·cious", "adjective",
+        "Attractively lively and animated; radiating vitality and a contagious enthusiasm for life",
+        "A vivacious on-screen presence is not born — it is crafted through deliberate study of delivery.",
+        listOf("Intensely quiet and contemplative", "Serious to the point of severity", "Focused exclusively on accuracy"),
+        "Eloquent"),
+    VocabWord("Lucid", "LU·cid", "adjective",
+        "Expressed clearly and easily understood; mentally sharp and brilliantly articulate",
+        "The most powerful speeches are not the most complex — they are the most lucid.",
+        listOf("Highly complex and layered", "Deliberately ambiguous", "Open to multiple interpretations"),
+        "Intellectual"),
+    VocabWord("Imperious", "im·PE·ri·ous", "adjective",
+        "Assuming power or authority without justification; having the bearing and confidence of royalty",
+        "He entered the room with an imperious calm that made everyone present feel they were in an audience.",
+        listOf("Timid and self-effacing", "Endlessly seeking approval", "Reluctant to take positions"),
+        "Royal"),
+    VocabWord("Articulate", "ar·TIC·u·late", "adjective",
+        "Having or showing the ability to speak fluently and coherently; expressing ideas with precision",
+        "To be articulate is to respect your audience enough to say exactly what you mean, no more, no less.",
+        listOf("Speaking rapidly without pause", "Using technical language exclusively", "Relying on visual aids"),
+        "Eloquent"),
+    VocabWord("Resplendent", "re·SPLEN·dent", "adjective",
+        "Attractive and impressive through being richly colourful or sumptuous; dazzling in appearance",
+        "A resplendent vocabulary does not merely describe the world — it elevates it.",
+        listOf("Quietly understated and minimal", "Deliberately plain and simple", "Blending into the background"),
+        "Royal"),
+    VocabWord("Venerable", "VEN·er·a·ble", "adjective",
+        "Accorded a great deal of respect, especially because of age, wisdom, or character",
+        "Speak like someone whose words will one day be considered venerable — because they just might be.",
+        listOf("Young and untested", "Controversial and divisive", "Easily dismissed"),
+        "Royal"),
+    VocabWord("Formidable", "FOR·mi·da·ble", "adjective",
+        "Inspiring fear or respect through being impressively large, powerful, intense or capable",
+        "A formidable communicator does not raise their voice — they lower it, and the room goes silent.",
+        listOf("Easily approachable and gentle", "Lacking in presence", "Soft-spoken to a fault"),
+        "Powerful"),
+    VocabWord("Gravitas", "GRAV·i·tas", "noun",
+        "Dignity, seriousness, and solemnity of manner; the quality that makes people listen",
+        "Gravitas cannot be performed — it accumulates through years of meaning every word you say.",
+        listOf("Lightness and comedic ease", "Physical imposing stature only", "Speed of verbal delivery"),
+        "Powerful")
+)
 
 @Composable
 fun SymmetricTopBar(title: String, onBackClicked: (() -> Unit)? = null) {
@@ -215,7 +329,13 @@ data class TpState(
     val replayTrigger: Int = 0,
 
     val isCameraPermitted: Boolean = false,
-    val showMonitor: Boolean = true
+    val showMonitor: Boolean = true,
+
+    val currentVocabIndex: Int = 0,
+    val vocabAnswered: Boolean = false,
+    val vocabSelectedAnswer: String = "",
+    val vocabShowingResult: Boolean = false,
+    val transcriptionReadyDismissed: Boolean = false
 )
 
 sealed class TpIntent {
@@ -236,6 +356,10 @@ sealed class TpIntent {
     object StartReplicaMode : TpIntent()
     data class UpdateVideoTime(val timeMs: Long) : TpIntent()
     object ResetReplicaEngine : TpIntent()
+
+    object NextVocabWord : TpIntent()
+    data class AnswerVocabMCQ(val selectedAnswer: String) : TpIntent()
+    object DismissTranscriptionReady : TpIntent()
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -279,6 +403,25 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             TpIntent.StartReplicaMode -> _state.update { it.copy(mode = TeleprompterMode.Replica, isPlaying = false) }
             is TpIntent.UpdateVideoTime -> _state.update { it.copy(currentVideoTimeMs = intent.timeMs) }
             TpIntent.ResetReplicaEngine -> _state.update { it.copy(replicaPhase = ReplicaPhase.IDLE) }
+
+            TpIntent.NextVocabWord -> _state.update {
+                it.copy(
+                    currentVocabIndex = (it.currentVocabIndex + 1) % VOCAB_WORDS.size,
+                    vocabAnswered = false,
+                    vocabSelectedAnswer = "",
+                    vocabShowingResult = false
+                )
+            }
+            is TpIntent.AnswerVocabMCQ -> _state.update {
+                it.copy(
+                    vocabSelectedAnswer = intent.selectedAnswer,
+                    vocabAnswered = true,
+                    vocabShowingResult = true
+                )
+            }
+            TpIntent.DismissTranscriptionReady -> _state.update {
+                it.copy(transcriptionReadyDismissed = true)
+            }
         }
     }
 
@@ -307,7 +450,15 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     // =================================================================================================
 
     private fun runOfflineAI(videoUri: Uri, filesDir: File) {
-        _state.update { it.copy(replicaVideoUri = videoUri, engineDetails = "") }
+        _state.update { it.copy(
+            replicaVideoUri = videoUri,
+            engineDetails = "",
+            currentVocabIndex = (it.currentVocabIndex + 1) % VOCAB_WORDS.size,
+            vocabAnswered = false,
+            vocabSelectedAnswer = "",
+            vocabShowingResult = false,
+            transcriptionReadyDismissed = false
+        )}
 
         viewModelScope.launch(Dispatchers.IO) {
 
@@ -327,6 +478,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
+                    // Extracting natively bundled asset instead of HTTP download
                     _state.update { it.copy(engineDetails = "Unpacking bundled model…", engineProgress = 0.5f) }
                     ZipInputStream(app.assets.open(VOSK_MODEL_ZIP)).use { zis ->
                         var entry = zis.nextEntry
@@ -433,7 +585,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                         syncedScript = syncedLines,
                         scriptText = newScript,
                         statusMessage = "Sync Ready",
-                        engineDetails = "${syncedLines.size} words aligned across ${durationSec.toInt()}s"
+                        engineDetails = "${syncedLines.size} words aligned across ${durationSec.toInt()}s",
+                        transcriptionReadyDismissed = false
                     )
                 }
             }
@@ -824,83 +977,359 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
             }
 
             if (state.replicaPhase != ReplicaPhase.IDLE && state.replicaPhase != ReplicaPhase.READY) {
-                Box(
+                VocabLoadingScreen(state = state, viewModel = viewModel)
+            } else if (state.replicaPhase == ReplicaPhase.READY && !state.transcriptionReadyDismissed) {
+                VocabLoadingScreen(state = state, viewModel = viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
+    val vocabWord = VOCAB_WORDS[state.currentVocabIndex % VOCAB_WORDS.size]
+
+    val mcqOptions = remember(state.currentVocabIndex) {
+        (listOf(vocabWord.definition) + vocabWord.wrongDefinitions).shuffled()
+    }
+
+    val categoryColor = when (vocabWord.category) {
+        "Royal"        -> Color(0xFFD6AD4B)
+        "Intellectual" -> Color(0xFF6B9EC7)
+        "Eloquent"     -> Color(0xFF7BC47F)
+        "Powerful"     -> Color(0xFF9E2A2F)
+        else           -> SoftWarmWhite
+    }
+
+    MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
+        Box(modifier = Modifier.fillMaxSize().background(DeepForestGreen)) {
+
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                if (state.replicaPhase != ReplicaPhase.READY) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .background(CardForestGreen)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(state.engineProgress.coerceIn(0f, 1f))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(SaturatedCrimson, GoldenrodYellow)
+                                    )
+                                )
+                        )
+                    }
+                }
+
+                Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .clickable(enabled = false) {}
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (state.replicaPhase == ReplicaPhase.READY) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF7BC47F),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Video Transcribed!",
+                                color = Color(0xFF7BC47F),
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = state.statusMessage.uppercase(),
+                            color = GoldenrodYellow.copy(alpha = 0.7f),
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "${(state.engineProgress * 100).toInt()}%",
+                            color = SoftWarmWhite.copy(alpha = 0.5f),
+                            fontFamily = FontFamily.SansSerif,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                if (state.replicaPhase == ReplicaPhase.READY) {
                     Column(
                         modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(24.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(
+                                BorderStroke(UltraThinBorder, Color(0xFF7BC47F).copy(alpha = 0.5f)),
+                                RoundedCornerShape(12.dp)
+                            )
                             .background(CardForestGreen)
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(20.dp)
                     ) {
+                        Text(
+                            text = state.engineDetails,
+                            color = SoftWarmWhite.copy(alpha = 0.7f),
+                            fontFamily = TpTheme.fonts,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PrimaryCrimsonButton(
+                            text = "Launch Teleprompter →",
+                            onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) },
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.4f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldenrodYellow.copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(text = "Show More Words First", fontSize = 12.sp, fontFamily = TpTheme.fonts)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(20.dp))
+                }
 
-                        if (state.replicaPhase == ReplicaPhase.ERROR) {
-                            Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(48.dp))
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
-
-                            if (state.engineDetails.isNotBlank()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 100.dp)
+                ) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(
+                                    BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.4f)),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .background(CardForestGreen)
+                                .padding(20.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(categoryColor.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = vocabWord.category.uppercase(),
+                                        color = categoryColor,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp
+                                    )
+                                }
                                 Text(
-                                    text = state.engineDetails,
-                                    color = SoftWarmWhite.copy(alpha = 0.6f),
+                                    text = vocabWord.partOfSpeech,
+                                    color = SoftWarmWhite.copy(alpha = 0.4f),
+                                    fontSize = 11.sp,
                                     fontFamily = TpTheme.fonts,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                    textAlign = TextAlign.Center
+                                    fontStyle = FontStyle.Italic
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(24.dp))
-                            OutlinedButton(onClick = { viewModel.dispatch(TpIntent.ResetReplicaEngine) }) {
-                                Text("Dismiss", color = GoldenrodYellow)
-                            }
-                        } else {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
-                                CircularProgressIndicator(
-                                    progress = { state.engineProgress },
-                                    color = SaturatedCrimson,
-                                    strokeWidth = 4.dp,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                Text(
-                                    text = "${(state.engineProgress * 100).toInt()}%",
-                                    color = SoftWarmWhite,
-                                    fontSize = 14.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Text(text = state.statusMessage, color = GoldenrodYellow, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = when (state.replicaPhase) {
-                                    ReplicaPhase.DOWNLOADING_MODEL -> "Unpacking · one time only"
-                                    ReplicaPhase.EXTRACTING_AUDIO  -> "Step 1 of 2 · Audio extraction"
-                                    ReplicaPhase.TRANSCRIBING      -> "Step 2 of 2 · Speech recognition"
-                                    else -> ""
-                                },
-                                color = SoftWarmWhite.copy(alpha = 0.45f),
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                modifier = Modifier.padding(top = 4.dp)
+                                text = vocabWord.word,
+                                color = SoftWarmWhite,
+                                fontFamily = TpTheme.fonts,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 40.sp,
+                                letterSpacing = (-0.5).sp
                             )
 
-                            if (state.engineDetails.isNotBlank()) {
-                                Text(text = state.engineDetails, color = SoftWarmWhite.copy(alpha = 0.7f), fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
+                            Text(
+                                text = vocabWord.pronunciation,
+                                color = categoryColor.copy(alpha = 0.8f),
+                                fontFamily = FontFamily.SansSerif,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(
+                                    BorderStroke(UltraThinBorder, SoftWarmWhite.copy(alpha = 0.08f)),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .background(CardForestGreen)
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                text = "What does this word mean?",
+                                color = SoftWarmWhite.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 14.dp)
+                            )
+
+                            mcqOptions.forEachIndexed { idx, option ->
+                                val isSelected = state.vocabSelectedAnswer == option
+                                val isCorrect  = option == vocabWord.definition
+                                val bgColor = when {
+                                    !state.vocabAnswered                  -> CardForestGreen
+                                    isSelected && isCorrect               -> Color(0xFF1E3D2A)
+                                    isSelected && !isCorrect              -> Color(0xFF3D1E1E)
+                                    !isSelected && isCorrect && state.vocabAnswered -> Color(0xFF1E3D2A)
+                                    else                                  -> CardForestGreen
+                                }
+                                val borderColor = when {
+                                    !state.vocabAnswered -> SoftWarmWhite.copy(alpha = 0.12f)
+                                    isSelected && isCorrect  -> Color(0xFF7BC47F)
+                                    isSelected && !isCorrect -> SaturatedCrimson
+                                    !isSelected && isCorrect && state.vocabAnswered -> Color(0xFF7BC47F).copy(alpha = 0.5f)
+                                    else -> SoftWarmWhite.copy(alpha = 0.06f)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = if (idx < 3) 8.dp else 0.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(
+                                            BorderStroke(UltraThinBorder, borderColor),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .background(bgColor)
+                                        .clickable(enabled = !state.vocabAnswered) {
+                                            viewModel.dispatch(TpIntent.AnswerVocabMCQ(option))
+                                        }
+                                        .padding(14.dp)
+                                ) {
+                                    Text(
+                                        text = option,
+                                        color = when {
+                                            !state.vocabAnswered -> SoftWarmWhite.copy(alpha = 0.85f)
+                                            isSelected && isCorrect  -> Color(0xFF7BC47F)
+                                            isSelected && !isCorrect -> SaturatedCrimson
+                                            !isSelected && isCorrect && state.vocabAnswered -> Color(0xFF7BC47F).copy(alpha = 0.7f)
+                                            else -> SoftWarmWhite.copy(alpha = 0.3f)
+                                        },
+                                        fontSize = 13.sp,
+                                        fontFamily = TpTheme.fonts,
+                                        lineHeight = 19.sp
+                                    )
+                                }
+                            }
+
+                            if (state.vocabAnswered) {
+                                val isCorrect = state.vocabSelectedAnswer == vocabWord.definition
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = if (isCorrect) "✓ Correct! Well done." else "✗ Not quite — the correct answer is highlighted above.",
+                                    color = if (isCorrect) Color(0xFF7BC47F) else SaturatedCrimson.copy(alpha = 0.9f),
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                     }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(
+                                    BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.2f)),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .background(CardForestGreen)
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                text = "USED IN SPEECH",
+                                color = categoryColor.copy(alpha = 0.6f),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "\"${vocabWord.exampleSentence}\"",
+                                color = SoftWarmWhite.copy(alpha = 0.85f),
+                                fontSize = 14.sp,
+                                fontFamily = TpTheme.fonts,
+                                lineHeight = 22.sp,
+                                fontStyle = FontStyle.Italic
+                            )
+                        }
+                    }
+
+                    item {
+                        Button(
+                            onClick = { viewModel.dispatch(TpIntent.NextVocabWord) },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CardForestGreen,
+                                contentColor = GoldenrodYellow
+                            ),
+                            border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = ButtonDefaults.buttonElevation(0.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Next Word", fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+
+            if (state.replicaPhase == ReplicaPhase.READY) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, DeepForestGreen, DeepForestGreen)
+                            )
+                        )
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    PrimaryCrimsonButton(
+                        text = "Launch Teleprompter →",
+                        onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
+                    )
                 }
             }
         }
@@ -1012,15 +1441,10 @@ fun ReplicaSyncContent(state: TpState, viewModel: TpViewModel) {
             it.startTimeMs <= state.currentVideoTimeMs
         }.coerceAtLeast(0)
 
-        // Scroll so the active item lands at the centre of the visible list.
-        // visibleItemsInfo gives us real measured item heights — no estimation needed.
         val layoutInfo = listState.layoutInfo
         val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
         val itemHeight = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 120
 
-        // We want the active item's top edge to be at: (viewportHeight / 2) - (itemHeight / 2)
-        // scrollToItem offset is measured from the top of the target item to the top of viewport
-        // so: offset = -(viewportHeight / 2 - itemHeight / 2)
         val centreOffset = -(viewportHeight / 2 - itemHeight / 2)
 
         listState.animateScrollToItem(
