@@ -234,7 +234,82 @@ val VOCAB_WORDS = listOf(
         "Dignity, seriousness, and solemnity of manner; the quality that makes people listen",
         "Gravitas cannot be performed — it accumulates through years of meaning every word you say.",
         listOf("Lightness and comedic ease", "Physical imposing stature only", "Speed of verbal delivery"),
-        "Powerful")
+        "Powerful"),
+    VocabWord("Ineffable", "in·EF·fa·ble", "adjective",
+        "Too great or extreme to be expressed or described in words",
+        "The speaker left the audience in a state of ineffable awe.",
+        listOf("Lacking any real substance", "Easily offended by minor things", "Quick to change opinions"),
+        "Eloquent"),
+    VocabWord("Grandiloquent", "gran·DIL·o·quent", "adjective",
+        "Pompous or extravagant in language, style, or manner",
+        "His grandiloquent speech sounded impressive but contained very few actual facts.",
+        listOf("Speaking in a quiet, timid voice", "Refusing to use long words", "Focused entirely on logic"),
+        "Eloquent"),
+    VocabWord("Sovereign", "SOV·er·eign", "adjective",
+        "Possessing supreme or ultimate power",
+        "She walked onto the stage with a sovereign confidence that demanded absolute silence.",
+        listOf("Yielding easily to pressure", "Concerned with trivial matters", "Incapable of making decisions"),
+        "Royal"),
+    VocabWord("Omnipotent", "om·NIP·o·tent", "adjective",
+        "Having unlimited power; able to do anything",
+        "To a beginner, a master orator can appear almost omnipotent in their control of the room.",
+        listOf("Lacking the ability to speak", "Easily confused by questions", "Dependent on written notes"),
+        "Powerful"),
+    VocabWord("Didactic", "di·DAC·tic", "adjective",
+        "Intended to teach, particularly in having moral instruction",
+        "The best educational videos are engaging without being overly didactic.",
+        listOf("Intended to confuse the listener", "Lacking any educational value", "Focused purely on entertainment"),
+        "Intellectual"),
+    VocabWord("Esoteric", "es·o·TER·ic", "adjective",
+        "Intended for or likely to be understood by only a small number of people",
+        "He translated esoteric academic research into stories that anyone could understand.",
+        listOf("Understood by everyone instantly", "Highly emotional and reactive", "Physically imposing and loud"),
+        "Intellectual"),
+    VocabWord("August", "au·GUST", "adjective",
+        "Respected and impressive",
+        "The august panel of judges listened to the presentation with unbroken focus.",
+        listOf("Youthful and highly inexperienced", "Quick to anger and shout", "Easily distracted and bored"),
+        "Royal"),
+    VocabWord("Inexorable", "in·EX·o·ra·ble", "adjective",
+        "Impossible to stop or prevent",
+        "The speaker built their argument with an inexorable logic that left no room for doubt.",
+        listOf("Easily stopped or discouraged", "Moving slowly and hesitantly", "Frequently changing direction"),
+        "Powerful"),
+    VocabWord("Sonorous", "SON·o·rous", "adjective",
+        "Imposingly deep and full in sound",
+        "His sonorous voice carried to the back of the auditorium without a microphone.",
+        listOf("High-pitched and squeaky", "Quiet and easily ignored", "Harsh and grating to the ear"),
+        "Eloquent"),
+    VocabWord("Pellucid", "pel·LU·cid", "adjective",
+        "Translucently clear; easily understood",
+        "She broke down the complex topic into pellucid explanations that delighted the viewers.",
+        listOf("Murky, confusing, and dark", "Overly long and repetitive", "Filled with technical jargon"),
+        "Intellectual"),
+    VocabWord("Fervent", "FER·vent", "adjective",
+        "Having or displaying a passionate intensity",
+        "A fervent delivery will often cover up minor mistakes in the script itself.",
+        listOf("Showing no emotion at all", "Coldly calculating and precise", "Easily distracted from the goal"),
+        "Powerful"),
+    VocabWord("Epiphany", "e·PIPH·a·ny", "noun",
+        "An experience of a sudden and striking realization",
+        "A great explainer video guides the viewer toward an epiphany rather than just listing facts.",
+        listOf("A long, boring explanation", "A complete misunderstanding", "A physical feeling of fatigue"),
+        "Intellectual"),
+    VocabWord("Intrepid", "in·TREP·id", "adjective",
+        "Resolute fearlessness, endurance, and fortitude",
+        "The intrepid journalist asked the questions everyone else was too afraid to voice.",
+        listOf("Deeply afraid of public speaking", "Easily intimidated by authority", "Cautious to a fault"),
+        "Powerful"),
+    VocabWord("Regal", "RE·gal", "adjective",
+        "Of, resembling, or fit for a monarch, especially in being magnificent or dignified",
+        "She maintained a regal posture even when faced with aggressive questioning.",
+        listOf("Slouching and looking defeated", "Acting like a commoner", "Speaking with heavy slang"),
+        "Royal"),
+    VocabWord("Profound", "pro·FOUND", "adjective",
+        "Very great or intense; having or showing great knowledge or insight",
+        "Sometimes a ten-second pause can be more profound than ten minutes of talking.",
+        listOf("Shallow and lacking depth", "Easily forgotten", "Physically lightweight"),
+        "Intellectual")
 )
 
 @Composable
@@ -415,8 +490,12 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
 
             TpIntent.NextVocabWord -> _state.update {
+                var nextIdx = VOCAB_WORDS.indices.random()
+                while (nextIdx == it.currentVocabIndex && VOCAB_WORDS.size > 1) {
+                    nextIdx = VOCAB_WORDS.indices.random()
+                }
                 it.copy(
-                    currentVocabIndex = (it.currentVocabIndex + 1) % VOCAB_WORDS.size,
+                    currentVocabIndex = nextIdx,
                     vocabAnswered = false,
                     vocabSelectedAnswer = "",
                     vocabShowingResult = false
@@ -463,7 +542,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(
             replicaVideoUri = videoUri,
             engineDetails = "",
-            currentVocabIndex = (it.currentVocabIndex + 1) % VOCAB_WORDS.size,
+            currentVocabIndex = VOCAB_WORDS.indices.random(),
             vocabAnswered = false,
             vocabSelectedAnswer = "",
             vocabShowingResult = false,
@@ -891,8 +970,8 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp), // Tightened spacing
-                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Tightened top padding
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)
             ) {
                 item {
                     SymmetricTopBar(title = "Teleprompter Studio")
@@ -1018,13 +1097,16 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
         else           -> SoftWarmWhite
     }
 
-    var vocabFontSize by remember { mutableStateOf(48.sp) }
-    var pronunFontSize by remember { mutableStateOf(16.sp) }
-
-    LaunchedEffect(vocabWord.word) {
-        vocabFontSize = 48.sp
-        pronunFontSize = 16.sp
+    // Beautiful step-down sizing that preserves the massive 48sp font for most words
+    // but gracefully shrinks just enough for the long ones without wrapping.
+    val wordLength = vocabWord.word.length
+    val vocabFontSize = when {
+        wordLength >= 13 -> 28.sp
+        wordLength >= 10 -> 32.sp
+        wordLength >= 8  -> 40.sp
+        else             -> 48.sp
     }
+    val pronunFontSize = 14.sp
 
     MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
         Box(
@@ -1037,15 +1119,15 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 8.dp),
+                        .padding(top = 12.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    // Replaced TextButton with compact clickable Text to eliminate giant invisible padding
                     Text(
                         text = "✕ Cancel",
                         color = SoftWarmWhite.copy(alpha = 0.5f),
@@ -1119,7 +1201,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
 
                 LazyColumn(
@@ -1179,14 +1261,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                 fontWeight = FontWeight.Bold,
                                 fontSize = vocabFontSize,
                                 letterSpacing = (-0.5).sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Visible,
-                                onTextLayout = { result ->
-                                    if (result.hasVisualOverflow && vocabFontSize > 24.sp) {
-                                        vocabFontSize = (vocabFontSize.value * 0.9f).sp
-                                        pronunFontSize = max(12f, vocabFontSize.value * 0.35f).sp
-                                    }
-                                }
+                                maxLines = 1
                             )
 
                             Text(
