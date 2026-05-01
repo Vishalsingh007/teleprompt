@@ -242,7 +242,7 @@ fun SymmetricTopBar(title: String, onBackClicked: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 24.dp, horizontal = 20.dp),
+            .padding(top = 16.dp, bottom = 12.dp, start = 20.dp, end = 20.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -293,7 +293,7 @@ data class SpeakingProfile(
 
 sealed class TeleprompterMode {
     object Setup : TeleprompterMode()
-    object Vocab : TeleprompterMode()      // FIX 2: Step 1
+    object Vocab : TeleprompterMode()
     object Reading : TeleprompterMode()
     object Replica : TeleprompterMode()
 }
@@ -401,7 +401,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             )}
 
             is TpIntent.ProcessReplicaVideo -> {
-                _state.update { it.copy(mode = TeleprompterMode.Vocab) } // FIX 2: Step 2
+                _state.update { it.copy(mode = TeleprompterMode.Vocab) }
                 runOfflineAI(intent.uri, intent.appFilesDir)
             }
             TpIntent.StartReplicaMode -> _state.update { it.copy(mode = TeleprompterMode.Replica, isPlaying = false) }
@@ -410,7 +410,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 it.copy(
                     replicaPhase = ReplicaPhase.IDLE,
                     engineDetails = "",
-                    mode = TeleprompterMode.Setup // FIX 2: Step 4
+                    mode = TeleprompterMode.Setup
                 )
             }
 
@@ -885,14 +885,14 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(DeepForestGreen)
-                .statusBarsPadding() // FIX 1: Step 3
-                .navigationBarsPadding() // FIX 1: Step 3
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp), // Tightened spacing
+                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Tightened top padding
             ) {
                 item {
                     SymmetricTopBar(title = "Teleprompter Studio")
@@ -910,7 +910,6 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
 
                         Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
 
-                        // FIX 2: Step 6 - Removed conditional logic for Ready phase
                         OutlinedButton(
                             onClick = { videoPickerLauncher.launch("video/*") },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1004,7 +1003,7 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
 }
 
 @Composable
-fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) { // FIX 2: Step 7 - added as top level screen
+fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
     val vocabWord = VOCAB_WORDS[state.currentVocabIndex % VOCAB_WORDS.size]
 
     val mcqOptions = remember(state.currentVocabIndex) {
@@ -1032,32 +1031,31 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) { // FIX 2: Step 
             modifier = Modifier
                 .fillMaxSize()
                 .background(DeepForestGreen)
-                .statusBarsPadding() // FIX 1: Step 3
-                .navigationBarsPadding() // FIX 1: Step 3
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 20.dp)
             ) {
-                // FIX 2: Step 7 - Cancel button
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .padding(top = 12.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = {
-                        viewModel.dispatch(TpIntent.ResetReplicaEngine)
-                    }) {
-                        Text(
-                            text = "✕ Cancel",
-                            color = SoftWarmWhite.copy(alpha = 0.4f),
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.SansSerif
-                        )
-                    }
+                    // Replaced TextButton with compact clickable Text to eliminate giant invisible padding
+                    Text(
+                        text = "✕ Cancel",
+                        color = SoftWarmWhite.copy(alpha = 0.5f),
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { viewModel.dispatch(TpIntent.ResetReplicaEngine) }
+                            .padding(vertical = 4.dp, horizontal = 8.dp)
+                    )
                 }
 
                 if (state.replicaPhase != ReplicaPhase.READY && state.replicaPhase != ReplicaPhase.ERROR) {
@@ -1120,6 +1118,8 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) { // FIX 2: Step 
                             modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
                 LazyColumn(
@@ -1347,6 +1347,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) { // FIX 2: Step 
                             )
                         )
                         .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
                 ) {
                     PrimaryCrimsonButton(
                         text = "Launch Teleprompter →",
@@ -1640,7 +1641,6 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // FIX 1: Step 3 - Add navigationBarsPadding here
             .navigationBarsPadding()
             .padding(bottom = 20.dp, start = 20.dp, end = 20.dp)
             .graphicsLayer { alpha = currentAlpha; translationY = (1f - currentAlpha) * 100f }
@@ -1782,17 +1782,16 @@ fun TeleprompterApp() {
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    // FIX 1: Step 2 - Removed windowInsetsPadding(WindowInsets.systemBars) wrapper
     AnimatedContent(
         targetState = state.mode,
         label = "Flow Transition",
         transitionSpec = {
-            slideInVertically { -it } + fadeIn() togetherWith slideOutVertically { it } + fadeOut() // FIX 2: Step 5
+            slideInVertically { -it } + fadeIn() togetherWith slideOutVertically { it } + fadeOut()
         }
     ) { mode ->
         when (mode) {
             TeleprompterMode.Setup -> SetupScreen(state, viewModel)
-            TeleprompterMode.Vocab -> VocabLoadingScreen(state, viewModel) // FIX 2: Step 5
+            TeleprompterMode.Vocab -> VocabLoadingScreen(state, viewModel)
             TeleprompterMode.Reading, TeleprompterMode.Replica -> StageScreen(state, viewModel)
         }
     }
