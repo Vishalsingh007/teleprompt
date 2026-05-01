@@ -17,6 +17,7 @@ import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.math.roundToInt // RE-ADDED: Critical for PiP camera drag math
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -36,6 +37,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -84,7 +86,6 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlin.math.roundToInt
 import org.vosk.Model
 import org.vosk.Recognizer
 
@@ -188,7 +189,6 @@ data class SyncedLine(
     val endTimeMs: Long
 )
 
-// NEW: Updated Replica Phases to support local model extraction[cite: 5]
 enum class ReplicaPhase {
     IDLE, DOWNLOADING_MODEL, EXTRACTING_AUDIO, TRANSCRIBING, READY, ERROR
 }
@@ -212,7 +212,7 @@ data class TpState(
 
     val isPlaying: Boolean = false,
     val isFocusMode: Boolean = false,
-    val isMirrorMode: Boolean = false,
+    val replayTrigger: Int = 0,
 
     val isCameraPermitted: Boolean = false,
     val showMonitor: Boolean = true
@@ -230,7 +230,7 @@ sealed class TpIntent {
     object ForcePause : TpIntent()
 
     object ToggleFocusMode : TpIntent()
-    object ToggleMirrorMode : TpIntent()
+    object ReplayVideo : TpIntent()
 
     data class ProcessReplicaVideo(val uri: Uri, val appFilesDir: File) : TpIntent()
     object StartReplicaMode : TpIntent()
@@ -250,7 +250,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val wordsPerLine = 5
 
-    // NEW: Pointing to bundled assets[cite: 5]
     private val VOSK_MODEL_ZIP  = "vosk-model.zip"
     private val VOSK_MODEL_DIR  = "vosk-model-small-en-us-0.15"
 
@@ -270,7 +269,11 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             TpIntent.ForcePause -> _state.update { it.copy(isPlaying = false) }
 
             TpIntent.ToggleFocusMode -> _state.update { it.copy(isFocusMode = !it.isFocusMode) }
-            TpIntent.ToggleMirrorMode -> _state.update { it.copy(isMirrorMode = !it.isMirrorMode) }
+            TpIntent.ReplayVideo -> _state.update { it.copy(
+                isPlaying = false,
+                currentVideoTimeMs = 0L,
+                replayTrigger = _state.value.replayTrigger + 1
+            )}
 
             is TpIntent.ProcessReplicaVideo -> runOfflineAI(intent.uri, intent.appFilesDir)
             TpIntent.StartReplicaMode -> _state.update { it.copy(mode = TeleprompterMode.Replica, isPlaying = false) }
@@ -308,10 +311,10 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch(Dispatchers.IO) {
 
-            // ── GUARD: script must exist for energy-align fallback[cite: 5] ──
+            // ── GUARD: script must exist for energy-align fallback ──
             val script = _state.value.scriptText.trim()
 
-            // ── STAGE 1: Unpack Vosk model from assets if not present[cite: 5] ──────────────
+            // ── STAGE 1: Unpack Vosk model from assets if not present ──────────────
             val modelDir = File(filesDir, VOSK_MODEL_DIR)
             if (!modelDir.exists() || modelDir.listFiles().isNullOrEmpty()) {
                 _state.update {
@@ -324,7 +327,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
-                    // Extracting natively bundled asset instead of HTTP download
                     _state.update { it.copy(engineDetails = "Unpacking bundled model…", engineProgress = 0.5f) }
                     ZipInputStream(app.assets.open(VOSK_MODEL_ZIP)).use { zis ->
                         var entry = zis.nextEntry
@@ -355,7 +357,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // ── STAGE 2: Extract audio[cite: 5] ────────────────────────────────────
+            // ── STAGE 2: Extract audio ────────────────────────────────────
             _state.update {
                 it.copy(
                     replicaPhase = ReplicaPhase.EXTRACTING_AUDIO,
@@ -378,7 +380,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             val (pcm16k, durationSec) = audioResult
 
-            // ── STAGE 3: Transcribe[cite: 5] ───────────────────────────────────────
+            // ── STAGE 3: Transcribe ───────────────────────────────────────
             _state.update {
                 it.copy(
                     replicaPhase = ReplicaPhase.TRANSCRIBING,
@@ -392,10 +394,10 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             val syncedLines: List<SyncedLine>
 
             if (modelDir2.exists() && !modelDir2.listFiles().isNullOrEmpty()) {
-                // PATH A: Real Vosk word timestamps[cite: 5]
+                // PATH A: Real Vosk word timestamps
                 syncedLines = runVoskTranscription(pcm16k, durationSec, modelDir2.absolutePath)
             } else {
-                // PATH B: Energy alignment fallback[cite: 5]
+                // PATH B: Energy alignment fallback
                 if (script.isBlank()) {
                     _state.update {
                         it.copy(
@@ -407,13 +409,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 val scriptWords = script.split("\\s+".toRegex()).filter { it.isNotBlank() }
-                syncedLines = energyAlign(
-                    FloatArray(pcm16k.size) { pcm16k[it] / 32768f }, // Critical fix applied
-                    16000, durationSec, scriptWords
+                syncedLines = groupWordsIntoChunks(
+                    energyAlign(
+                        FloatArray(pcm16k.size) { pcm16k[it] / 32768f },
+                        16000, durationSec, scriptWords
+                    ),
+                    chunkSize = 5
                 )
             }
 
-            // ── DONE[cite: 5] ──────────────────────────────────────────────────────
+            // ── DONE ──────────────────────────────────────────────────────
             withContext(Dispatchers.Main) {
                 val newScript = if (_state.value.scriptText.isBlank() && syncedLines.isNotEmpty()) {
                     syncedLines.joinToString(" ") { it.text }
@@ -440,7 +445,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
         return try {
             extractor.setDataSource(app, videoUri, null)
 
-            // Find audio track[cite: 5]
             var audioIndex = -1
             var audioFormat: MediaFormat? = null
             for (i in 0 until extractor.trackCount) {
@@ -462,7 +466,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
             _state.update { it.copy(engineDetails = "Decoding ${durationSec.toInt()}s of audio") }
 
-            // Decode[cite: 5]
             val codec = MediaCodec.createDecoderByType(mime)
             codec.configure(audioFormat, null, null, 0)
             codec.start()
@@ -507,7 +510,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             codec.stop(); codec.release()
 
-            // Convert to ShortArray, downmix stereo→mono[cite: 5]
             var raw = shorts.toShortArray()
             if (channels == 2) {
                 raw = ShortArray(raw.size / 2) { i ->
@@ -515,7 +517,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Resample to 16kHz (Vosk requires 16kHz)[cite: 5]
             val target = 16_000
             val resampled = if (origRate != target) {
                 val ratio = origRate.toDouble() / target
@@ -567,9 +568,12 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             val script = _state.value.scriptText.trim()
             val scriptWords = script.split("\\s+".toRegex()).filter { it.isNotBlank() }
-            energyAlign(
-                FloatArray(pcm.size) { pcm[it] / 32768f }, // Critical fix applied
-                16000, durationSec, scriptWords
+            groupWordsIntoChunks(
+                energyAlign(
+                    FloatArray(pcm.size) { pcm[it] / 32768f },
+                    16000, durationSec, scriptWords
+                ),
+                chunkSize = 5
             )
         }
     }
@@ -578,16 +582,32 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
         return try {
             val obj = JSONObject(json)
             val arr = obj.optJSONArray("result") ?: return emptyList()
-            (0 until arr.length()).map { i ->
+            val wordList = (0 until arr.length()).map { i ->
                 val word = arr.getJSONObject(i)
                 SyncedLine(
-                    text     = word.getString("word").trim(),
+                    text        = word.getString("word").trim(),
                     startTimeMs = (word.getDouble("start") * 1000).toLong(),
                     endTimeMs   = (word.getDouble("end")   * 1000).toLong()
                 )
             }
+            groupWordsIntoChunks(wordList, chunkSize = 5)
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    private fun groupWordsIntoChunks(words: List<SyncedLine>, chunkSize: Int = 5): List<SyncedLine> {
+        if (words.isEmpty()) return emptyList()
+        val chunks = words.chunked(chunkSize).map { chunk ->
+            SyncedLine(
+                text       = chunk.joinToString(" ") { it.text },
+                startTimeMs = chunk.first().startTimeMs,
+                endTimeMs   = chunk.last().endTimeMs
+            )
+        }
+        return chunks.mapIndexed { i, chunk ->
+            val nextStart = chunks.getOrNull(i + 1)?.startTimeMs
+            chunk.copy(endTimeMs = nextStart ?: (chunk.endTimeMs + 2000L))
         }
     }
 
@@ -719,11 +739,28 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
                                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
                             }
 
-                            // Description updated to reflect bundled assets[cite: 5]
                             Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
 
                             if (state.replicaPhase == ReplicaPhase.READY && state.syncedScript.isNotEmpty()) {
-                                PrimaryCrimsonButton(text = "Launch Split-Screen Replica", onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) })
+                                PrimaryCrimsonButton(
+                                    text = "Launch Split-Screen Replica",
+                                    onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.dispatch(TpIntent.ResetReplicaEngine)
+                                        videoPickerLauncher.launch("video/*")
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                                    border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.5f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldenrodYellow.copy(alpha = 0.7f)),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(text = "Try a Different Video", fontSize = 12.sp, fontFamily = TpTheme.fonts)
+                                }
                             } else {
                                 OutlinedButton(
                                     onClick = { videoPickerLauncher.launch("video/*") },
@@ -810,7 +847,6 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
                             Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
 
-                            // NEW: Adding Engine details to Error State
                             if (state.engineDetails.isNotBlank()) {
                                 Text(
                                     text = state.engineDetails,
@@ -829,7 +865,7 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
                         } else {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
                                 CircularProgressIndicator(
-                                    progress = { state.engineProgress }, // Fix: Lambda syntax[cite: 5]
+                                    progress = { state.engineProgress },
                                     color = SaturatedCrimson,
                                     strokeWidth = 4.dp,
                                     modifier = Modifier.fillMaxSize()
@@ -847,7 +883,6 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
 
                             Text(text = state.statusMessage, color = GoldenrodYellow, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
 
-                            // Phase breakdown UI[cite: 5]
                             Text(
                                 text = when (state.replicaPhase) {
                                     ReplicaPhase.DOWNLOADING_MODEL -> "Unpacking · one time only"
@@ -892,6 +927,7 @@ fun StageScreen(state: TpState, viewModel: TpViewModel) {
                         VideoPlayerWidget(
                             uri = state.replicaVideoUri,
                             isPlaying = state.isPlaying,
+                            replayTrigger = state.replayTrigger,
                             onTimeUpdate = { ms -> viewModel.dispatch(TpIntent.UpdateVideoTime(ms)) }
                         )
                     }
@@ -923,7 +959,7 @@ fun StageScreen(state: TpState, viewModel: TpViewModel) {
 }
 
 @Composable
-fun VideoPlayerWidget(uri: Uri, isPlaying: Boolean, onTimeUpdate: (Long) -> Unit) {
+fun VideoPlayerWidget(uri: Uri, isPlaying: Boolean, replayTrigger: Int, onTimeUpdate: (Long) -> Unit) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -934,6 +970,13 @@ fun VideoPlayerWidget(uri: Uri, isPlaying: Boolean, onTimeUpdate: (Long) -> Unit
 
     LaunchedEffect(isPlaying) {
         if (isPlaying) exoPlayer.play() else exoPlayer.pause()
+    }
+
+    LaunchedEffect(replayTrigger) {
+        if (replayTrigger > 0) {
+            exoPlayer.seekTo(0)
+            exoPlayer.pause()
+        }
     }
 
     LaunchedEffect(exoPlayer) {
@@ -963,22 +1006,32 @@ fun ReplicaSyncContent(state: TpState, viewModel: TpViewModel) {
     if (state.syncedScript.isEmpty()) return
 
     val listState = rememberLazyListState()
-    var exactLineHeightPx by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(state.currentVideoTimeMs, exactLineHeightPx) {
-        if (exactLineHeightPx == 0f) return@LaunchedEffect
-
-        val activeIndex = state.syncedScript.indexOfFirst {
-            state.currentVideoTimeMs in it.startTimeMs..it.endTimeMs
+    LaunchedEffect(state.currentVideoTimeMs) {
+        val activeIndex = state.syncedScript.indexOfLast {
+            it.startTimeMs <= state.currentVideoTimeMs
         }.coerceAtLeast(0)
 
-        val activeLine = state.syncedScript[activeIndex]
-        val duration = activeLine.endTimeMs - activeLine.startTimeMs
-        val progress = if (duration > 0) (state.currentVideoTimeMs - activeLine.startTimeMs).toFloat() / duration.toFloat() else 0f
+        // Scroll so the active item lands at the centre of the visible list.
+        // visibleItemsInfo gives us real measured item heights — no estimation needed.
+        val layoutInfo = listState.layoutInfo
+        val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+        val itemHeight = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 120
 
-        val pixelOffset = (activeIndex + progress) * exactLineHeightPx
-        listState.scrollToItem(0, scrollOffset = pixelOffset.roundToInt())
+        // We want the active item's top edge to be at: (viewportHeight / 2) - (itemHeight / 2)
+        // scrollToItem offset is measured from the top of the target item to the top of viewport
+        // so: offset = -(viewportHeight / 2 - itemHeight / 2)
+        val centreOffset = -(viewportHeight / 2 - itemHeight / 2)
+
+        listState.animateScrollToItem(
+            index = activeIndex,
+            scrollOffset = centreOffset
+        )
     }
+
+    val activeIndex = state.syncedScript.indexOfLast {
+        it.startTimeMs <= state.currentVideoTimeMs
+    }.coerceAtLeast(0)
 
     Box(
         modifier = Modifier
@@ -993,26 +1046,28 @@ fun ReplicaSyncContent(state: TpState, viewModel: TpViewModel) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 200.dp),
+            contentPadding = PaddingValues(vertical = 80.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             userScrollEnabled = false
         ) {
-            items(state.syncedScript) { line ->
-                val isActive = state.currentVideoTimeMs in line.startTimeMs..line.endTimeMs
+            itemsIndexed(state.syncedScript) { index, line ->
+                val isActive = index == activeIndex
+                val isPast   = index < activeIndex
                 Text(
                     text = line.text,
-                    color = if (isActive) Color.White else SoftWarmWhite.copy(alpha = 0.5f),
+                    color = when {
+                        isActive -> Color.White
+                        isPast   -> SoftWarmWhite.copy(alpha = 0.18f)
+                        else     -> SoftWarmWhite.copy(alpha = 0.35f)
+                    },
                     fontFamily = TpTheme.fonts,
-                    fontSize = 28.sp,
+                    fontSize = if (isActive) 30.sp else 26.sp,
                     lineHeight = 36.sp,
                     textAlign = TextAlign.Center,
-                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
+                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp, vertical = 8.dp)
-                        .onGloballyPositioned { coordinates ->
-                            if (exactLineHeightPx == 0f) exactLineHeightPx = coordinates.size.height.toFloat()
-                        }
                 )
             }
         }
@@ -1025,7 +1080,6 @@ fun ManualReadingContent(state: TpState, viewModel: TpViewModel) {
 
     val listState = rememberLazyListState()
     var exactLineHeightPx by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current
 
     val isDragging = listState.isScrollInProgress
     LaunchedEffect(isDragging) {
@@ -1098,7 +1152,7 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
             .background(StageNearBlackGreen),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HorizontalDivider(color = SaturatedCrimson.copy(alpha = 0.1f), thickness = UltraThinBorder, modifier = Modifier.padding(bottom = 12.dp)) // Fix applied[cite: 5]
+        HorizontalDivider(color = SaturatedCrimson.copy(alpha = 0.1f), thickness = UltraThinBorder, modifier = Modifier.padding(bottom = 12.dp))
 
         if (state.mode == TeleprompterMode.Reading) {
             Row(
@@ -1117,7 +1171,11 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceAround
         ) {
-            ControlButton(icon = Icons.Default.Close, desc = "Setup", onClick = { viewModel.dispatch(TpIntent.StopReading) })
+            ControlButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                desc = "Back",
+                onClick = { viewModel.dispatch(TpIntent.StopReading) }
+            )
 
             FloatingActionButton(
                 onClick = { viewModel.dispatch(TpIntent.TogglePlayPause) },
@@ -1133,7 +1191,11 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
                 )
             }
 
-            ControlButton(icon = Icons.Default.LocationOn, desc = "Mirror", onClick = { viewModel.dispatch(TpIntent.ToggleMirrorMode) }, isActive = state.isMirrorMode)
+            ControlButton(
+                icon = Icons.Default.Refresh,
+                desc = "Replay",
+                onClick = { viewModel.dispatch(TpIntent.ReplayVideo) }
+            )
             ControlButton(icon = Icons.AutoMirrored.Filled.Send, desc = "Focus", onClick = { viewModel.dispatch(TpIntent.ToggleFocusMode) }, isActive = state.isFocusMode)
         }
     }
@@ -1216,7 +1278,6 @@ fun CameraPreview(modifier: Modifier) {
 @Composable
 fun TeleprompterApp() {
     val context = LocalContext.current
-    // Casting ViewModel with application context[cite: 5]
     val viewModel: TpViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
