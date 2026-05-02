@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.AndroidViewModel
@@ -44,7 +45,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -80,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -145,7 +146,6 @@ data class VocabWord(
 )
 
 val VOCAB_WORDS = listOf(
-    // ── ORIGINAL 20 WORDS ──────────────────────────────────────────────────
     VocabWord("Perspicacious", "per·spi·CA·cious", "adjective",
         "Having a ready insight; shrewd and discerning beyond ordinary perception",
         "A perspicacious speaker always understands their audience before uttering a word.",
@@ -327,7 +327,6 @@ val VOCAB_WORDS = listOf(
         ),
         "Powerful"),
 
-    // ── NEW EXPANSION PACK ─────────────────────────────────────────────────────────────
     VocabWord("Magisterial", "ma·jis·TEER·e·al", "adjective",
         "Having or showing great authority; dictatorial",
         "He delivered the opening hook with a magisterial tone that demanded instant respect.",
@@ -1133,14 +1132,6 @@ val VOCAB_WORDS = listOf(
 
 enum class AppTab { TELEPROMPTER, WORDS, STUDIO }
 
-data class SpeakingProfile(
-    val id: String,
-    val name: String,
-    val wpm: Int,
-    val icon: ImageVector,
-    val desc: String
-)
-
 sealed class TeleprompterMode {
     object Setup : TeleprompterMode()
     object Vocab : TeleprompterMode()
@@ -1161,8 +1152,6 @@ enum class ReplicaPhase {
 data class TpState(
     val mode: TeleprompterMode = TeleprompterMode.Setup,
     val scriptText: String = "",
-    val availableProfiles: List<SpeakingProfile> = emptyList(),
-    val selectedProfileId: String = "natural",
     val wpm: Int = 140,
 
     val scriptLines: List<String> = emptyList(),
@@ -1195,12 +1184,12 @@ data class TpState(
     val streakDays: Int = 0,
     val wordsLearned: Int = 0,
     val wordsCorrect: Int = 0,
-    val showTranscriptionSnackbar: Boolean = false
+    val showCompletionBanner: Boolean = false,
+    val bannerVisible: Boolean = false
 )
 
 sealed class TpIntent {
     data class UpdateText(val text: String) : TpIntent()
-    data class SelectProfile(val profileId: String) : TpIntent()
     data class AdjustWpm(val delta: Int) : TpIntent()
     object ToggleCameraPermission : TpIntent()
 
@@ -1227,20 +1216,16 @@ sealed class TpIntent {
     data class TtsReady(val success: Boolean) : TpIntent()
 
     data class SelectTab(val tab: AppTab) : TpIntent()
-    object DismissTranscriptionSnackbar : TpIntent()
+
+    object ShowCompletionBanner : TpIntent()
+    object DismissCompletionBanner : TpIntent()
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tp_prefs", Context.MODE_PRIVATE)
     private val KEY_SCRIPT = "last_script"
 
-    private val _state = MutableStateFlow(TpState(
-        availableProfiles = listOf(
-            SpeakingProfile("calm", "Turtle", 100, Icons.Default.Add, "Tutorials & Explainers"),
-            SpeakingProfile("natural", "YouTube", 140, Icons.Default.PlayArrow, "Default pace"),
-            SpeakingProfile("turbo", "Energetic", 180, Icons.Default.Star, "Rapid-fire delivery")
-        )
-    ))
+    private val _state = MutableStateFlow(TpState())
     val state: StateFlow<TpState> = _state.asStateFlow()
 
     private val wordsPerLine = 5
@@ -1250,6 +1235,12 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private var tts: TextToSpeech? = null
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val toneGenerator = try {
+        ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+    } catch (e: Exception) {
+        null
+    }
 
     init {
         val saved = prefs.getString(KEY_SCRIPT, "") ?: ""
@@ -1292,7 +1283,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         tts?.stop()
         tts?.shutdown()
+        toneGenerator?.release()
         super.onCleared()
+    }
+
+    private fun playTone(type: Int, durationMs: Int = 80) {
+        if (audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT ||
+            audioManager.ringerMode == AudioManager.RINGER_MODE_VIBRATE) return
+        try {
+            toneGenerator?.startTone(type, durationMs)
+        } catch (e: Exception) { /* never crash on sound */ }
     }
 
     private fun speakWord(rate: Float) {
@@ -1314,14 +1314,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                     prefs.edit().putString(KEY_SCRIPT, intent.text).apply()
                 }
             }
-            is TpIntent.SelectProfile -> handleProfileSelection(intent.profileId)
             is TpIntent.AdjustWpm -> {
                 val newWpm = (_state.value.wpm + intent.delta).coerceIn(60, 300)
                 _state.update { it.copy(wpm = newWpm) }
             }
             TpIntent.ToggleCameraPermission -> _state.update { it.copy(isCameraPermitted = !it.isCameraPermitted) }
 
-            TpIntent.StartReading -> handleStartReading()
+            TpIntent.StartReading -> {
+                playTone(ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE, 60)
+                handleStartReading()
+            }
             TpIntent.StopReading -> handleStopReading()
             TpIntent.TogglePlayPause -> _state.update { it.copy(isPlaying = !it.isPlaying) }
             TpIntent.ForcePause -> _state.update { it.copy(isPlaying = false) }
@@ -1334,9 +1336,17 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             )}
 
             is TpIntent.ProcessReplicaVideo -> {
+                // Cancel any existing transcription and clear old result
                 _state.update { it.copy(
-                    mode = TeleprompterMode.Vocab,
-                    selectedTab = AppTab.WORDS
+                    replicaPhase = ReplicaPhase.IDLE,
+                    syncedScript = emptyList(),
+                    replicaVideoUri = null,
+                    engineProgress = 0f,
+                    statusMessage = "",
+                    engineDetails = "",
+                    showCompletionBanner = false,
+                    bannerVisible = false,
+                    transcriptionReadyDismissed = false
                 )}
                 runOfflineAI(intent.uri, intent.appFilesDir)
             }
@@ -1368,6 +1378,10 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             is TpIntent.AnswerVocabMCQ -> {
                 val isCorrect = intent.selectedAnswer == VOCAB_WORDS[_state.value.currentVocabIndex].definition
+                if (isCorrect) {
+                    playTone(ToneGenerator.TONE_PROP_ACK, 120)
+                }
+
                 val newLearned = _state.value.wordsLearned + 1
                 val newCorrect = _state.value.wordsCorrect + if (isCorrect) 1 else 0
                 val newStreak = if (_state.value.streakDays == 0) 1 else _state.value.streakDays
@@ -1402,13 +1416,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
 
             is TpIntent.SelectTab -> _state.update { it.copy(selectedTab = intent.tab) }
-            TpIntent.DismissTranscriptionSnackbar -> _state.update { it.copy(showTranscriptionSnackbar = false) }
-        }
-    }
 
-    private fun handleProfileSelection(id: String) {
-        val profile = _state.value.availableProfiles.find { it.id == id } ?: return
-        _state.update { it.copy(selectedProfileId = id, wpm = profile.wpm) }
+            TpIntent.ShowCompletionBanner -> _state.update { it.copy(showCompletionBanner = true, bannerVisible = true) }
+            TpIntent.DismissCompletionBanner -> {
+                _state.update { it.copy(bannerVisible = false) }
+                viewModelScope.launch {
+                    delay(350)
+                    _state.update { it.copy(showCompletionBanner = false) }
+                }
+            }
+        }
     }
 
     private fun handleStartReading() {
@@ -1551,6 +1568,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                     _state.value.scriptText
                 }
 
+                playTone(ToneGenerator.TONE_PROP_BEEP2, 200)
+
                 _state.update {
                     it.copy(
                         replicaPhase = ReplicaPhase.READY,
@@ -1560,8 +1579,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                         statusMessage = "Sync Ready",
                         engineDetails = "${syncedLines.size} words aligned across ${durationSec.toInt()}s",
                         transcriptionReadyDismissed = false,
-                        selectedTab = AppTab.STUDIO,
-                        showTranscriptionSnackbar = true
+                        showCompletionBanner = true,
+                        bannerVisible = true
                     )
                 }
             }
@@ -1944,36 +1963,34 @@ fun TeleprompterTab(state: TpState, viewModel: TpViewModel) {
                 PrimaryCrimsonButton(text = "▶  Start Teleprompter", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
             }
         }
-
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(text = "SPEED PROFILES".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
-                Spacer(modifier = Modifier.height(10.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.availableProfiles) { profile ->
-                        val isSelected = state.selectedProfileId == profile.id
-                        val bgColor = if (isSelected) GoldenrodYellow.copy(alpha = 0.15f) else CardForestGreen
-                        val borderColor = if (isSelected) GoldenrodYellow else GoldenrodYellow.copy(alpha = 0.2f)
-                        Row(
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(bgColor).border(BorderStroke(UltraThinBorder, borderColor), RoundedCornerShape(6.dp)).clickable { viewModel.dispatch(TpIntent.SelectProfile(profile.id)) }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(profile.icon, contentDescription = null, tint = GoldenrodYellow, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(profile.name, color = SoftWarmWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
-                                Text("${profile.wpm} WPM", color = GoldenrodYellow.copy(alpha = 0.8f), fontSize = 10.sp, fontFamily = FontFamily.SansSerif)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
 @Composable
 fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
+    val vocabWord = VOCAB_WORDS[state.currentVocabIndex % VOCAB_WORDS.size]
+
+    val mcqOptions = remember(state.currentVocabIndex) {
+        (listOf(vocabWord.definition) + vocabWord.wrongDefinitions).shuffled()
+    }
+
+    val categoryColor = when (vocabWord.category) {
+        "Royal"        -> Color(0xFFD6AD4B)
+        "Intellectual" -> Color(0xFF6B9EC7)
+        "Eloquent"     -> Color(0xFF7BC47F)
+        "Powerful"     -> Color(0xFF9E2A2F)
+        else           -> SoftWarmWhite
+    }
+
+    val wordLength = vocabWord.word.length
+    val vocabFontSize = when {
+        wordLength >= 13 -> 28.sp
+        wordLength >= 10 -> 32.sp
+        wordLength >= 8  -> 40.sp
+        else             -> 48.sp
+    }
+    val pronunFontSize = 14.sp
+
     var swipeOffsetX by remember { mutableFloatStateOf(0f) }
     val swipeThreshold = 80f
 
@@ -1992,7 +2009,33 @@ fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
         SymmetricTopBar(title = "Word Master")
 
         if (state.replicaPhase in listOf(ReplicaPhase.DOWNLOADING_MODEL, ReplicaPhase.EXTRACTING_AUDIO, ReplicaPhase.TRANSCRIBING)) {
-            TranscriptionProgressBanner(state)
+            // Passive nudge — user chose to come here, or is already here
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CardForestGreen)
+                    .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.15f)), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val infiniteTransition = rememberInfiniteTransition(label = "nudge_pulse")
+                val dotAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
+                    label = "nudge_dot"
+                )
+                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(SaturatedCrimson.copy(alpha = dotAlpha)))
+                Text(
+                    text = "Your video is being analysed — great time to learn a new word.",
+                    color = SoftWarmWhite.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         } else if (state.wordsLearned > 0 || state.streakDays > 0) {
             Row(
                 modifier = Modifier
@@ -2033,13 +2076,14 @@ fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
             AnimatedContent(
                 targetState = state.currentVocabIndex,
                 transitionSpec = {
-                    if (targetState > initialState) {
-                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(320, easing = EaseOutCubic)) + fadeIn(tween(240)) togetherWith
-                                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(280, easing = EaseInCubic)) + fadeOut(tween(200))
-                    } else {
-                        slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(320, easing = EaseOutCubic)) + fadeIn(tween(240)) togetherWith
-                                slideOutHorizontally(targetOffsetX = { it / 3 }, animationSpec = tween(280, easing = EaseInCubic)) + fadeOut(tween(200))
-                    }
+                    slideInHorizontally(
+                        initialOffsetX = { it },
+                        animationSpec = tween(320, easing = EaseOutCubic)
+                    ) + fadeIn(tween(240)) togetherWith
+                            slideOutHorizontally(
+                                targetOffsetX = { -it / 3 },
+                                animationSpec = tween(280, easing = EaseInCubic)
+                            ) + fadeOut(tween(200))
                 },
                 label = "VocabCardTransition"
             ) { vocabIndex ->
@@ -2306,6 +2350,18 @@ fun StudioTab(state: TpState, viewModel: TpViewModel) {
         ) {
             item {
                 SymmetricTopBar(title = "Studio")
+            }
+
+            item {
+                if (state.replicaPhase in listOf(
+                        ReplicaPhase.DOWNLOADING_MODEL,
+                        ReplicaPhase.EXTRACTING_AUDIO,
+                        ReplicaPhase.TRANSCRIBING
+                    )) {
+                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        TranscriptionProgressBanner(state)
+                    }
+                }
             }
 
             item {
@@ -2854,6 +2910,94 @@ fun CameraPreview(modifier: Modifier) {
     }
 }
 
+@Composable
+fun CompletionBanner(
+    state: TpState,
+    onTap: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    LaunchedEffect(state.showCompletionBanner) {
+        if (state.showCompletionBanner) {
+            delay(4000)
+            onDismiss()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = state.bannerVisible,
+        enter = slideInVertically(
+            initialOffsetY = { -it },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            )
+        ) + fadeIn(tween(250)),
+        exit = slideOutVertically(
+            targetOffsetY = { -it },
+            animationSpec = tween(300, easing = EaseInCubic)
+        ) + fadeOut(tween(200))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(CardForestGreen)
+                .border(
+                    BorderStroke(UltraThinBorder, Color(0xFF7BC47F).copy(alpha = 0.6f)),
+                    RoundedCornerShape(14.dp)
+                )
+                .clickable { onTap() }
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF7BC47F).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF7BC47F),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Video Synced",
+                        color = SoftWarmWhite,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = state.engineDetails.ifBlank { "Tap to launch teleprompter" },
+                        color = SoftWarmWhite.copy(alpha = 0.55f),
+                        fontFamily = FontFamily.SansSerif,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = GoldenrodYellow.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .graphicsLayer { rotationZ = 180f }
+                )
+            }
+        }
+    }
+}
+
 // =================================================================================================
 // 4. MAIN APPLICATION COMPOSABLE
 // =================================================================================================
@@ -2883,57 +3027,52 @@ fun TeleprompterApp() {
         return
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(state.showTranscriptionSnackbar) {
-        if (state.showTranscriptionSnackbar) {
-            val result = snackbarHostState.showSnackbar(
-                message = "Video synced — ${state.engineDetails}",
-                actionLabel = "Launch →",
-                duration = SnackbarDuration.Long
-            )
-            if (result == SnackbarResult.ActionPerformed) {
-                viewModel.dispatch(TpIntent.StartReplicaMode)
-            }
-            viewModel.dispatch(TpIntent.DismissTranscriptionSnackbar)
-        }
-    }
-
-    Scaffold(
-        containerColor = DeepForestGreen,
-        bottomBar = { TpBottomNavBar(state, viewModel) },
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState) { data ->
-                Snackbar(
-                    snackbarData = data,
-                    containerColor = CardForestGreen,
-                    contentColor = SoftWarmWhite,
-                    actionColor = GoldenrodYellow,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
-                )
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding).statusBarsPadding()) {
-            AnimatedContent(
-                targetState = state.selectedTab,
-                transitionSpec = {
-                    val direction = if (targetState.ordinal > initialState.ordinal)
-                        AnimatedContentTransitionScope.SlideDirection.Start
-                    else
-                        AnimatedContentTransitionScope.SlideDirection.End
-                    slideIntoContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeIn(tween(280)) togetherWith
-                            slideOutOfContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeOut(tween(280))
-                },
-                label = "TabTransition"
-            ) { tab ->
-                when (tab) {
-                    AppTab.TELEPROMPTER -> TeleprompterTab(state, viewModel)
-                    AppTab.WORDS -> WordMasterTab(state, viewModel)
-                    AppTab.STUDIO -> StudioTab(state, viewModel)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = DeepForestGreen,
+            bottomBar = { TpBottomNavBar(state, viewModel) }
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding).statusBarsPadding()) {
+                AnimatedContent(
+                    targetState = state.selectedTab,
+                    transitionSpec = {
+                        val direction = if (targetState.ordinal > initialState.ordinal)
+                            AnimatedContentTransitionScope.SlideDirection.Start
+                        else
+                            AnimatedContentTransitionScope.SlideDirection.End
+                        slideIntoContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeIn(tween(280)) togetherWith
+                                slideOutOfContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeOut(tween(280))
+                    },
+                    label = "TabTransition"
+                ) { tab ->
+                    when (tab) {
+                        AppTab.TELEPROMPTER -> TeleprompterTab(state, viewModel)
+                        AppTab.WORDS -> WordMasterTab(state, viewModel)
+                        AppTab.STUDIO -> StudioTab(state, viewModel)
+                    }
                 }
+            }
+        }
+
+        if (state.showCompletionBanner) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp)
+                    .zIndex(10f)
+            ) {
+                CompletionBanner(
+                    state = state,
+                    onTap = {
+                        viewModel.dispatch(TpIntent.DismissCompletionBanner)
+                        viewModel.dispatch(TpIntent.StartReplicaMode)
+                    },
+                    onDismiss = {
+                        viewModel.dispatch(TpIntent.DismissCompletionBanner)
+                    }
+                )
             }
         }
     }
