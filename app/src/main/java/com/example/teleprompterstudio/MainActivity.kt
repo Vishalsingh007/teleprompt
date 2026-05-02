@@ -44,6 +44,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -63,10 +64,12 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -473,7 +476,7 @@ val VOCAB_WORDS = listOf(
         "Of, characteristic of, or suitable for a lord; grand and magnificent",
         "He surveyed the massive auditorium with a lordly gaze before stepping up to the mic.",
         listOf(
-            "Timid, extremely shy, and constantly looking down; refusing to establish eye contact with the audience",
+            "Timid, shy, and looking down; refusing to establish eye contact with the audience",
             "Acting entirely like a theatrical jester; utilizing cheap physical comedy to distract from the core message",
             "Slouching heavily behind the podium and mumbling into the microphone with a profound lack of energy"
         ),
@@ -1128,51 +1131,7 @@ val VOCAB_WORDS = listOf(
         "Powerful")
 )
 
-@Composable
-fun SymmetricTopBar(title: String, onBackClicked: (() -> Unit)? = null) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 12.dp, start = 20.dp, end = 20.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (onBackClicked != null) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = GoldenrodYellow,
-                modifier = Modifier
-                    .clickable { onBackClicked() }
-                    .padding(8.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title.uppercase(),
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = GoldenrodYellow,
-                letterSpacing = 1.sp,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        if (onBackClicked == null) {
-            Spacer(modifier = Modifier.width(40.dp))
-        }
-    }
-}
-
-// =================================================================================================
-// 2. MVI APPLICATION STATE & VOSK REPLICA ENGINE
-// =================================================================================================
+enum class AppTab { TELEPROMPTER, WORDS, STUDIO }
 
 data class SpeakingProfile(
     val id: String,
@@ -1230,7 +1189,13 @@ data class TpState(
     val transcriptionReadyDismissed: Boolean = false,
 
     val isTtsSpeaking: Boolean = false,
-    val isTtsReady: Boolean = false
+    val isTtsReady: Boolean = false,
+
+    val selectedTab: AppTab = AppTab.TELEPROMPTER,
+    val streakDays: Int = 0,
+    val wordsLearned: Int = 0,
+    val wordsCorrect: Int = 0,
+    val showTranscriptionSnackbar: Boolean = false
 )
 
 sealed class TpIntent {
@@ -1260,6 +1225,9 @@ sealed class TpIntent {
     object SpeakCurrentWordSlow : TpIntent()
     object StopSpeaking : TpIntent()
     data class TtsReady(val success: Boolean) : TpIntent()
+
+    data class SelectTab(val tab: AppTab) : TpIntent()
+    object DismissTranscriptionSnackbar : TpIntent()
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -1284,11 +1252,17 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     init {
-        // Load saved script from SharedPreferences
         val saved = prefs.getString(KEY_SCRIPT, "") ?: ""
-        if (saved.isNotBlank()) {
-            _state.update { it.copy(scriptText = saved) }
-        }
+        val streak = prefs.getInt("streakDays", 0)
+        val learned = prefs.getInt("wordsLearned", 0)
+        val correct = prefs.getInt("wordsCorrect", 0)
+
+        _state.update { it.copy(
+            scriptText = saved,
+            streakDays = streak,
+            wordsLearned = learned,
+            wordsCorrect = correct
+        )}
 
         tts = TextToSpeech(app) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -1360,7 +1334,10 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             )}
 
             is TpIntent.ProcessReplicaVideo -> {
-                _state.update { it.copy(mode = TeleprompterMode.Vocab) }
+                _state.update { it.copy(
+                    mode = TeleprompterMode.Vocab,
+                    selectedTab = AppTab.WORDS
+                )}
                 runOfflineAI(intent.uri, intent.appFilesDir)
             }
             TpIntent.StartReplicaMode -> _state.update { it.copy(mode = TeleprompterMode.Replica, isPlaying = false) }
@@ -1389,12 +1366,28 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
-            is TpIntent.AnswerVocabMCQ -> _state.update {
-                it.copy(
-                    vocabSelectedAnswer = intent.selectedAnswer,
-                    vocabAnswered = true,
-                    vocabShowingResult = true
-                )
+            is TpIntent.AnswerVocabMCQ -> {
+                val isCorrect = intent.selectedAnswer == VOCAB_WORDS[_state.value.currentVocabIndex].definition
+                val newLearned = _state.value.wordsLearned + 1
+                val newCorrect = _state.value.wordsCorrect + if (isCorrect) 1 else 0
+                val newStreak = if (_state.value.streakDays == 0) 1 else _state.value.streakDays
+
+                prefs.edit()
+                    .putInt("wordsLearned", newLearned)
+                    .putInt("wordsCorrect", newCorrect)
+                    .putInt("streakDays", newStreak)
+                    .apply()
+
+                _state.update {
+                    it.copy(
+                        vocabSelectedAnswer = intent.selectedAnswer,
+                        vocabAnswered = true,
+                        vocabShowingResult = true,
+                        wordsLearned = newLearned,
+                        wordsCorrect = newCorrect,
+                        streakDays = newStreak
+                    )
+                }
             }
             TpIntent.DismissTranscriptionReady -> _state.update {
                 it.copy(transcriptionReadyDismissed = true)
@@ -1407,6 +1400,9 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 tts?.stop()
                 _state.update { it.copy(isTtsSpeaking = false) }
             }
+
+            is TpIntent.SelectTab -> _state.update { it.copy(selectedTab = intent.tab) }
+            TpIntent.DismissTranscriptionSnackbar -> _state.update { it.copy(showTranscriptionSnackbar = false) }
         }
     }
 
@@ -1447,10 +1443,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch(Dispatchers.IO) {
 
-            // ── GUARD: script must exist for energy-align fallback ──
             val script = _state.value.scriptText.trim()
 
-            // ── STAGE 1: Unpack Vosk model from assets if not present ──────────────
             val modelDir = File(filesDir, VOSK_MODEL_DIR)
             if (!modelDir.exists() || modelDir.listFiles().isNullOrEmpty()) {
                 _state.update {
@@ -1493,7 +1487,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // ── STAGE 2: Extract audio ────────────────────────────────────
             _state.update {
                 it.copy(
                     replicaPhase = ReplicaPhase.EXTRACTING_AUDIO,
@@ -1516,7 +1509,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             val (pcm16k, durationSec) = audioResult
 
-            // ── STAGE 3: Transcribe ───────────────────────────────────────
             _state.update {
                 it.copy(
                     replicaPhase = ReplicaPhase.TRANSCRIBING,
@@ -1530,10 +1522,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             val syncedLines: List<SyncedLine>
 
             if (modelDir2.exists() && !modelDir2.listFiles().isNullOrEmpty()) {
-                // PATH A: Real Vosk word timestamps
                 syncedLines = runVoskTranscription(pcm16k, durationSec, modelDir2.absolutePath)
             } else {
-                // PATH B: Energy alignment fallback
                 if (script.isBlank()) {
                     _state.update {
                         it.copy(
@@ -1554,7 +1544,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 )
             }
 
-            // ── DONE ──────────────────────────────────────────────────────
             withContext(Dispatchers.Main) {
                 val newScript = if (_state.value.scriptText.isBlank() && syncedLines.isNotEmpty()) {
                     syncedLines.joinToString(" ") { it.text }
@@ -1570,7 +1559,9 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                         scriptText = newScript,
                         statusMessage = "Sync Ready",
                         engineDetails = "${syncedLines.size} words aligned across ${durationSec.toInt()}s",
-                        transcriptionReadyDismissed = false
+                        transcriptionReadyDismissed = false,
+                        selectedTab = AppTab.STUDIO,
+                        showTranscriptionSnackbar = true
                     )
                 }
             }
@@ -1818,6 +1809,48 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 // =================================================================================================
 
 @Composable
+fun SymmetricTopBar(title: String, onBackClicked: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 12.dp, start = 20.dp, end = 20.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (onBackClicked != null) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = GoldenrodYellow,
+                modifier = Modifier
+                    .clickable { onBackClicked() }
+                    .padding(8.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title.uppercase(),
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = GoldenrodYellow,
+                letterSpacing = 1.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        if (onBackClicked == null) {
+            Spacer(modifier = Modifier.width(40.dp))
+        }
+    }
+}
+
+@Composable
 fun PrimaryCrimsonButton(text: String, onClick: () -> Unit, enabled: Boolean = true, icon: ImageVector? = null) {
     Button(
         onClick = onClick,
@@ -1846,173 +1879,90 @@ fun PrimaryCrimsonButton(text: String, onClick: () -> Unit, enabled: Boolean = t
 }
 
 @Composable
-fun SetupScreen(state: TpState, viewModel: TpViewModel) {
-    val context = LocalContext.current
+fun TeleprompterTab(state: TpState, viewModel: TpViewModel) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp)
+    ) {
+        item {
+            SymmetricTopBar(title = "Teleprompter")
+        }
 
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.dispatch(TpIntent.ProcessReplicaVideo(it, context.filesDir)) }
-    }
-
-    MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(DeepForestGreen)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-        ) {
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(CardForestGreen)
+                    .padding(vertical = 10.dp, horizontal = 20.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                item {
-                    SymmetricTopBar(title = "Teleprompter Studio")
-                }
+                Text("📝 Paste Script", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+                Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("▶ Press Play", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+                Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("📷 Read on Camera", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+            }
+        }
 
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(CardForestGreen)
-                            .padding(vertical = 10.dp, horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("📝 Paste Script", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
-                        Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("▶ Press Play", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
-                        Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("📷 Read on Camera", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
-                    }
-                }
+        item {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = state.scriptText,
+                    onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
+                    modifier = Modifier.fillMaxWidth().height(140.dp),
+                    placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
+                    textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
+                        focusedBorderColor = GoldenrodYellow,
+                        cursorColor = GoldenrodYellow
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                val wordCount = state.scriptText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+                val estSecs = if (wordCount == 0) 0 else (wordCount * 60f / state.wpm).roundToInt()
+                Text(
+                    text = "$wordCount words · ~$estSecs s at ${state.wpm} WPM",
+                    color = SoftWarmWhite.copy(alpha = 0.4f),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
+                )
+            }
+        }
 
-                item {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                        Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = state.scriptText,
-                            onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
-                            modifier = Modifier.fillMaxWidth().height(140.dp),
-                            placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
-                            textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
-                                focusedBorderColor = GoldenrodYellow,
-                                cursorColor = GoldenrodYellow
-                            ),
-                            shape = RoundedCornerShape(6.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val wordCount = state.scriptText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
-                        val estSecs = if (wordCount == 0) 0 else (wordCount * 60f / state.wpm).roundToInt()
-                        Text(
-                            text = "$wordCount words · ~$estSecs s at ${state.wpm} WPM",
-                            color = SoftWarmWhite.copy(alpha = 0.4f),
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.SansSerif,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.End
-                        )
-                    }
-                }
+        item {
+            Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                PrimaryCrimsonButton(text = "▶  Start Teleprompter", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
+            }
+        }
 
-                item {
-                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
-                        PrimaryCrimsonButton(text = "▶  Start Teleprompter", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f))).background(CardForestGreen).clickable { viewModel.dispatch(TpIntent.ToggleCameraPermission) }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Picture-in-Picture Monitor", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GoldenrodYellow)
-                            Text(text = "Record yourself while reading to check your framing and performance.", fontSize = 11.sp, color = SoftWarmWhite.copy(alpha = 0.6f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        Switch(
-                            checked = state.isCameraPermitted,
-                            onCheckedChange = { viewModel.dispatch(TpIntent.ToggleCameraPermission) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = DeepForestGreen,
-                                checkedTrackColor = GoldenrodYellow,
-                                uncheckedThumbColor = SoftWarmWhite,
-                                uncheckedTrackColor = CardForestGreen
-                            )
-                        )
-                    }
-                }
-
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
+        item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(text = "SPEED PROFILES".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(state.availableProfiles) { profile ->
+                        val isSelected = state.selectedProfileId == profile.id
+                        val bgColor = if (isSelected) GoldenrodYellow.copy(alpha = 0.15f) else CardForestGreen
+                        val borderColor = if (isSelected) GoldenrodYellow else GoldenrodYellow.copy(alpha = 0.2f)
+                        Row(
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(bgColor).border(BorderStroke(UltraThinBorder, borderColor), RoundedCornerShape(6.dp)).clickable { viewModel.dispatch(TpIntent.SelectProfile(profile.id)) }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(SaturatedCrimson.copy(alpha = 0.15f))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text("ADVANCED", color = SaturatedCrimson, fontSize = 9.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
-                                }
-                            }
-
-                            Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
-
-                            OutlinedButton(
-                                onClick = { videoPickerLauncher.launch("video/*") },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                border = BorderStroke(UltraThinBorder, SaturatedCrimson),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
-                            }
-
-                            if (state.replicaPhase == ReplicaPhase.ERROR) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFF3D1E1E))
-                                        .padding(16.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(20.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    }
-                                    Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-
-                                    if (state.engineDetails.isNotBlank()) {
-                                        Text(
-                                            text = state.engineDetails,
-                                            color = SoftWarmWhite.copy(alpha = 0.6f),
-                                            fontFamily = TpTheme.fonts,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.padding(top = 4.dp)
-                                        )
-                                    }
-                                }
+                            Icon(profile.icon, contentDescription = null, tint = GoldenrodYellow, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(profile.name, color = SoftWarmWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
+                                Text("${profile.wpm} WPM", color = GoldenrodYellow.copy(alpha = 0.8f), fontSize = 10.sp, fontFamily = FontFamily.SansSerif)
                             }
                         }
                     }
@@ -2023,44 +1973,51 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
 }
 
 @Composable
-fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
-    val vocabWord = VOCAB_WORDS[state.currentVocabIndex % VOCAB_WORDS.size]
-
-    val mcqOptions = remember(state.currentVocabIndex) {
-        (listOf(vocabWord.definition) + vocabWord.wrongDefinitions).shuffled()
-    }
-
-    val categoryColor = when (vocabWord.category) {
-        "Royal"        -> Color(0xFFD6AD4B)
-        "Intellectual" -> Color(0xFF6B9EC7)
-        "Eloquent"     -> Color(0xFF7BC47F)
-        "Powerful"     -> Color(0xFF9E2A2F)
-        else           -> SoftWarmWhite
-    }
-
-    val wordLength = vocabWord.word.length
-    val vocabFontSize = when {
-        wordLength >= 13 -> 28.sp
-        wordLength >= 10 -> 32.sp
-        wordLength >= 8  -> 40.sp
-        else             -> 48.sp
-    }
-    val pronunFontSize = 14.sp
-
+fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
     var swipeOffsetX by remember { mutableFloatStateOf(0f) }
-    val swipeThreshold = 100f
+    val swipeThreshold = 80f
 
-    MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
+    val cardTranslation by animateFloatAsState(
+        targetValue = swipeOffsetX * 0.3f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "card_drag"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SymmetricTopBar(title = "Word Master")
+
+        if (state.replicaPhase in listOf(ReplicaPhase.DOWNLOADING_MODEL, ReplicaPhase.EXTRACTING_AUDIO, ReplicaPhase.TRANSCRIBING)) {
+            TranscriptionProgressBanner(state)
+        } else if (state.wordsLearned > 0 || state.streakDays > 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CardForestGreen)
+                    .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.15f)), RoundedCornerShape(8.dp))
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🔥 ${state.streakDays} day streak", color = GoldenrodYellow, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif, fontSize = 13.sp)
+                Text("${state.wordsLearned} words learned", color = SoftWarmWhite.copy(alpha = 0.6f), fontFamily = FontFamily.SansSerif, fontSize = 13.sp)
+            }
+        }
+
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(DeepForestGreen)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .pointerInput(Unit) {
+                .fillMaxWidth()
+                .weight(1f)
+                .graphicsLayer { translationX = cardTranslation }
+                .pointerInput(state.currentVocabIndex) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if (swipeOffsetX > swipeThreshold) {
+                            if (kotlin.math.abs(swipeOffsetX) > swipeThreshold) {
                                 viewModel.dispatch(TpIntent.NextVocabWord)
                             }
                             swipeOffsetX = 0f
@@ -2068,117 +2025,53 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                         onDragCancel = { swipeOffsetX = 0f },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            if (dragAmount > 0) {
-                                swipeOffsetX += dragAmount
-                            }
+                            swipeOffsetX += dragAmount
                         }
                     )
                 }
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text = "✕ Cancel",
-                        color = SoftWarmWhite.copy(alpha = 0.5f),
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.SansSerif,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { viewModel.dispatch(TpIntent.ResetReplicaEngine) }
-                            .padding(vertical = 4.dp, horizontal = 8.dp)
-                    )
-                }
-
-                if (state.replicaPhase != ReplicaPhase.READY && state.replicaPhase != ReplicaPhase.ERROR) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                    val alpha by infiniteTransition.animateFloat(
-                        initialValue = 0.4f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(1000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "alpha"
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CardForestGreen)
-                            .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(GoldenrodYellow.copy(alpha = alpha)))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Transcribing your video… solve a word while you wait",
-                                    color = GoldenrodYellow,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(
-                                text = state.statusMessage,
-                                color = SoftWarmWhite.copy(alpha = 0.8f),
-                                fontSize = 10.sp,
-                                fontFamily = TpTheme.fonts
-                            )
-                            Text(
-                                text = "${(state.engineProgress * 100).toInt()}%",
-                                color = SoftWarmWhite.copy(alpha = 0.8f),
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.SansSerif
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { state.engineProgress.coerceIn(0f, 1f) },
-                            color = SaturatedCrimson,
-                            trackColor = DeepForestGreen,
-                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
-                        )
+            AnimatedContent(
+                targetState = state.currentVocabIndex,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(320, easing = EaseOutCubic)) + fadeIn(tween(240)) togetherWith
+                                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(280, easing = EaseInCubic)) + fadeOut(tween(200))
+                    } else {
+                        slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(320, easing = EaseOutCubic)) + fadeIn(tween(240)) togetherWith
+                                slideOutHorizontally(targetOffsetX = { it / 3 }, animationSpec = tween(280, easing = EaseInCubic)) + fadeOut(tween(200))
                     }
-
-                    Spacer(modifier = Modifier.height(4.dp))
+                },
+                label = "VocabCardTransition"
+            ) { vocabIndex ->
+                val vocabWord = VOCAB_WORDS[vocabIndex % VOCAB_WORDS.size]
+                val mcqOptions = remember(vocabIndex) {
+                    (listOf(vocabWord.definition) + vocabWord.wrongDefinitions).shuffled()
                 }
-
+                val categoryColor = when (vocabWord.category) {
+                    "Royal"        -> Color(0xFFD6AD4B)
+                    "Intellectual" -> Color(0xFF6B9EC7)
+                    "Eloquent"     -> Color(0xFF7BC47F)
+                    "Powerful"     -> Color(0xFF9E2A2F)
+                    else           -> SoftWarmWhite
+                }
+                val vocabFontSize = when {
+                    vocabWord.word.length >= 13 -> 28.sp
+                    vocabWord.word.length >= 10 -> 32.sp
+                    vocabWord.word.length >= 8  -> 40.sp
+                    else -> 48.sp
+                }
+                val pronunFontSize = 14.sp
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 100.dp)
+                    contentPadding = PaddingValues(bottom = 40.dp)
                 ) {
                     item {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .border(
-                                    BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.4f)),
-                                    RoundedCornerShape(12.dp)
-                                )
+                                .border(BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.4f)), RoundedCornerShape(12.dp))
                                 .background(CardForestGreen)
                                 .padding(20.dp)
                         ) {
@@ -2193,46 +2086,20 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                         .background(categoryColor.copy(alpha = 0.15f))
                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
-                                    Text(
-                                        text = vocabWord.category.uppercase(),
-                                        color = categoryColor,
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.SansSerif,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.sp
-                                    )
+                                    Text(text = vocabWord.category.uppercase(), color = categoryColor, fontSize = 10.sp, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                                 }
-                                Text(
-                                    text = vocabWord.partOfSpeech,
-                                    color = SoftWarmWhite.copy(alpha = 0.4f),
-                                    fontSize = 11.sp,
-                                    fontFamily = TpTheme.fonts,
-                                    fontStyle = FontStyle.Italic
-                                )
+                                Text(text = vocabWord.partOfSpeech, color = SoftWarmWhite.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = TpTheme.fonts, fontStyle = FontStyle.Italic)
                             }
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            Text(
-                                text = vocabWord.word,
-                                color = SoftWarmWhite,
-                                fontFamily = TpTheme.fonts,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = vocabFontSize,
-                                letterSpacing = (-0.5).sp,
-                                maxLines = 1
-                            )
+                            Text(text = vocabWord.word, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontWeight = FontWeight.Bold, fontSize = vocabFontSize, letterSpacing = (-0.5).sp, maxLines = 1)
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(top = 4.dp)
                             ) {
-                                Text(
-                                    text = vocabWord.pronunciation,
-                                    color = categoryColor.copy(alpha = 0.8f),
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = pronunFontSize,
-                                )
+                                Text(text = vocabWord.pronunciation, color = categoryColor.copy(alpha = 0.8f), fontFamily = FontFamily.SansSerif, fontSize = pronunFontSize)
 
                                 if (state.isTtsReady) {
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -2259,22 +2126,11 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .border(
-                                    BorderStroke(UltraThinBorder, SoftWarmWhite.copy(alpha = 0.08f)),
-                                    RoundedCornerShape(12.dp)
-                                )
+                                .border(BorderStroke(UltraThinBorder, SoftWarmWhite.copy(alpha = 0.08f)), RoundedCornerShape(12.dp))
                                 .background(CardForestGreen)
                                 .padding(20.dp)
                         ) {
-                            Text(
-                                text = "What does this word mean?",
-                                color = SoftWarmWhite.copy(alpha = 0.5f),
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.5.sp,
-                                modifier = Modifier.padding(bottom = 14.dp)
-                            )
+                            Text(text = "What does this word mean?", color = SoftWarmWhite.copy(alpha = 0.5f), fontSize = 12.sp, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, modifier = Modifier.padding(bottom = 14.dp))
 
                             mcqOptions.forEachIndexed { idx, option ->
                                 val isSelected = state.vocabSelectedAnswer == option
@@ -2299,14 +2155,9 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                         .fillMaxWidth()
                                         .padding(bottom = if (idx < 3) 8.dp else 0.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .border(
-                                            BorderStroke(UltraThinBorder, borderColor),
-                                            RoundedCornerShape(8.dp)
-                                        )
+                                        .border(BorderStroke(UltraThinBorder, borderColor), RoundedCornerShape(8.dp))
                                         .background(bgColor)
-                                        .clickable(enabled = !state.vocabAnswered) {
-                                            viewModel.dispatch(TpIntent.AnswerVocabMCQ(option))
-                                        }
+                                        .clickable(enabled = !state.vocabAnswered) { viewModel.dispatch(TpIntent.AnswerVocabMCQ(option)) }
                                         .padding(14.dp)
                                 ) {
                                     Text(
@@ -2318,9 +2169,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                             !isSelected && isCorrect && state.vocabAnswered -> Color(0xFF7BC47F).copy(alpha = 0.7f)
                                             else -> SoftWarmWhite.copy(alpha = 0.3f)
                                         },
-                                        fontSize = 13.sp,
-                                        fontFamily = TpTheme.fonts,
-                                        lineHeight = 19.sp
+                                        fontSize = 13.sp, fontFamily = TpTheme.fonts, lineHeight = 19.sp
                                     )
                                 }
                             }
@@ -2328,13 +2177,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                             if (state.vocabAnswered) {
                                 val isCorrect = state.vocabSelectedAnswer == vocabWord.definition
                                 Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = if (isCorrect) "✓ Correct! Well done." else "✗ Not quite — the correct answer is highlighted above.",
-                                    color = if (isCorrect) Color(0xFF7BC47F) else SaturatedCrimson.copy(alpha = 0.9f),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Text(text = if (isCorrect) "✓ Correct! Well done." else "✗ Not quite — the correct answer is highlighted above.", color = if (isCorrect) Color(0xFF7BC47F) else SaturatedCrimson.copy(alpha = 0.9f), fontSize = 12.sp, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -2344,30 +2187,13 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .border(
-                                    BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.2f)),
-                                    RoundedCornerShape(12.dp)
-                                )
+                                .border(BorderStroke(UltraThinBorder, categoryColor.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
                                 .background(CardForestGreen)
                                 .padding(20.dp)
                         ) {
-                            Text(
-                                text = "USED IN SPEECH",
-                                color = categoryColor.copy(alpha = 0.6f),
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.5.sp
-                            )
+                            Text(text = "USED IN SPEECH", color = categoryColor.copy(alpha = 0.6f), fontSize = 10.sp, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                             Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "\"${vocabWord.exampleSentence}\"",
-                                color = SoftWarmWhite.copy(alpha = 0.85f),
-                                fontSize = 14.sp,
-                                fontFamily = TpTheme.fonts,
-                                lineHeight = 22.sp,
-                                fontStyle = FontStyle.Italic
-                            )
+                            Text(text = "\"${vocabWord.exampleSentence}\"", color = SoftWarmWhite.copy(alpha = 0.85f), fontSize = 14.sp, fontFamily = TpTheme.fonts, lineHeight = 22.sp, fontStyle = FontStyle.Italic)
                         }
                     }
 
@@ -2375,10 +2201,7 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                         Button(
                             onClick = { viewModel.dispatch(TpIntent.NextVocabWord) },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardForestGreen,
-                                contentColor = GoldenrodYellow
-                            ),
+                            colors = ButtonDefaults.buttonColors(containerColor = CardForestGreen, contentColor = GoldenrodYellow),
                             border = BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)),
                             shape = RoundedCornerShape(8.dp),
                             elevation = ButtonDefaults.buttonElevation(0.dp)
@@ -2390,73 +2213,283 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                     }
                 }
             }
+        }
+    }
+}
 
-            if (state.replicaPhase == ReplicaPhase.READY) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, DeepForestGreen, DeepForestGreen)
-                            )
-                        )
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
-                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
-                ) {
-                    PrimaryCrimsonButton(
-                        text = "Launch Teleprompter →",
-                        onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
-                    )
-                }
+@Composable
+fun TranscriptionProgressBanner(state: TpState) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardForestGreen)
+            .border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(SaturatedCrimson.copy(alpha = alpha)))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = state.statusMessage,
+                    color = SoftWarmWhite,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                text = "${(state.engineProgress * 100).toInt()}%",
+                color = GoldenrodYellow,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        LinearProgressIndicator(
+            progress = { state.engineProgress.coerceIn(0f, 1f) },
+            color = SaturatedCrimson,
+            trackColor = DeepForestGreen,
+            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(1.5.dp))
+        )
+    }
+}
+
+@Composable
+fun StudioTab(state: TpState, viewModel: TpViewModel) {
+    val context = LocalContext.current
+    var showVideoPickedSheet by remember { mutableStateOf(false) }
+    var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            pendingVideoUri = it
+            showVideoPickedSheet = true
+        }
+    }
+
+    LaunchedEffect(showVideoPickedSheet) {
+        if (showVideoPickedSheet) {
+            delay(1800)
+            showVideoPickedSheet = false
+            pendingVideoUri?.let { uri ->
+                viewModel.dispatch(TpIntent.ProcessReplicaVideo(uri, context.filesDir))
+                pendingVideoUri = null
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp)
+        ) {
+            item {
+                SymmetricTopBar(title = "Studio")
             }
 
-            if (state.replicaPhase == ReplicaPhase.READY && !state.transcriptionReadyDismissed) {
-                Dialog(
-                    onDismissRequest = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) },
-                    properties = DialogProperties(usePlatformDefaultWidth = false)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(CardForestGreen)
-                            .border(BorderStroke(UltraThinBorder, Color(0xFF7BC47F).copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
+            item {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = GoldenrodYellow,
-                                modifier = Modifier.size(40.dp)
-                            )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(SaturatedCrimson.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("ADVANCED", fontSize = 9.sp, color = SaturatedCrimson, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
+                            }
+                        }
+
+                        Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
+
+                        OutlinedButton(
+                            onClick = { videoPickerLauncher.launch("video/*") },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            border = BorderStroke(UltraThinBorder, SaturatedCrimson),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        if (state.replicaPhase == ReplicaPhase.ERROR) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Video Transcribed!",
-                                color = GoldenrodYellow,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = state.engineDetails,
-                                color = SoftWarmWhite,
-                                fontFamily = TpTheme.fonts,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            PrimaryCrimsonButton(
-                                text = "OK",
-                                onClick = { viewModel.dispatch(TpIntent.DismissTranscriptionReady) }
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF3D1E1E))
+                                    .padding(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+
+                                if (state.engineDetails.isNotBlank()) {
+                                    Text(
+                                        text = state.engineDetails,
+                                        color = SoftWarmWhite.copy(alpha = 0.6f),
+                                        fontFamily = TpTheme.fonts,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f))).background(CardForestGreen).clickable { viewModel.dispatch(TpIntent.ToggleCameraPermission) }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Picture-in-Picture Monitor", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GoldenrodYellow)
+                        Text(text = "Record yourself while reading to check your framing and performance.", fontSize = 11.sp, color = SoftWarmWhite.copy(alpha = 0.6f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    Switch(
+                        checked = state.isCameraPermitted,
+                        onCheckedChange = { viewModel.dispatch(TpIntent.ToggleCameraPermission) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DeepForestGreen,
+                            checkedTrackColor = GoldenrodYellow,
+                            uncheckedThumbColor = SoftWarmWhite,
+                            uncheckedTrackColor = CardForestGreen
+                        )
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showVideoPickedSheet,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .background(CardForestGreen)
+                    .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f)), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .padding(24.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.size(width = 36.dp, height = 3.dp).clip(CircleShape).background(SoftWarmWhite.copy(alpha = 0.2f)))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Icon(imageVector = Icons.Default.VideoFile, contentDescription = null, tint = GoldenrodYellow, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Video Selected", color = SoftWarmWhite, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Analysing your delivery while you practise a word — we'll notify you when it's ready.",
+                        color = SoftWarmWhite.copy(alpha = 0.55f),
+                        fontFamily = TpTheme.fonts,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 19.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        repeat(3) { index ->
+                            val infiniteTransition = rememberInfiniteTransition(label = "dot$index")
+                            val alpha by infiniteTransition.animateFloat(
+                                initialValue = 0.2f, targetValue = 1f,
+                                animationSpec = infiniteRepeatable(
+                                    tween(600, delayMillis = index * 150, easing = EaseInOut),
+                                    RepeatMode.Reverse
+                                ), label = "dot_alpha_$index"
+                            )
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(GoldenrodYellow.copy(alpha = alpha)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TpBottomNavBar(state: TpState, viewModel: TpViewModel) {
+    NavigationBar(
+        containerColor = Color(0xFF0A1F15),
+        tonalElevation = 0.dp,
+        modifier = Modifier.border(
+            BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.15f)),
+            shape = RectangleShape
+        )
+    ) {
+        val tabs = listOf(
+            Triple(AppTab.TELEPROMPTER, Icons.Default.MicNone, "Teleprompter"),
+            Triple(AppTab.WORDS, Icons.Default.MenuBook, "Words"),
+            Triple(AppTab.STUDIO, Icons.Default.VideoLibrary, "Studio")
+        )
+        tabs.forEach { (tab, icon, label) ->
+            val selected = state.selectedTab == tab
+            NavigationBarItem(
+                selected = selected,
+                onClick = { viewModel.dispatch(TpIntent.SelectTab(tab)) },
+                icon = {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        modifier = Modifier.size(22.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        text = label,
+                        fontFamily = FontFamily.SansSerif,
+                        fontSize = 10.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = GoldenrodYellow,
+                    selectedTextColor = GoldenrodYellow,
+                    unselectedIconColor = SoftWarmWhite.copy(alpha = 0.35f),
+                    unselectedTextColor = SoftWarmWhite.copy(alpha = 0.35f),
+                    indicatorColor = GoldenrodYellow.copy(alpha = 0.12f)
+                )
+            )
         }
     }
 }
@@ -2735,7 +2768,7 @@ fun TpControlsFooter(state: TpState, viewModel: TpViewModel) {
                 modifier = Modifier.size(64.dp)
             ) {
                 Icon(
-                    imageVector = if (state.isPlaying) Icons.Default.Clear else Icons.Default.PlayArrow,
+                    imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = null,
                     modifier = Modifier.size(32.dp)
                 )
@@ -2837,17 +2870,71 @@ fun TeleprompterApp() {
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    AnimatedContent(
-        targetState = state.mode,
-        label = "Flow Transition",
-        transitionSpec = {
-            slideInVertically { -it } + fadeIn() togetherWith slideOutVertically { it } + fadeOut()
+    if (state.mode == TeleprompterMode.Reading || state.mode == TeleprompterMode.Replica) {
+        AnimatedContent(
+            targetState = state.mode,
+            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) },
+            label = "StageTransition"
+        ) { mode ->
+            if (mode == TeleprompterMode.Reading || mode == TeleprompterMode.Replica) {
+                StageScreen(state, viewModel)
+            }
         }
-    ) { mode ->
-        when (mode) {
-            TeleprompterMode.Setup -> SetupScreen(state, viewModel)
-            TeleprompterMode.Vocab -> VocabLoadingScreen(state, viewModel)
-            TeleprompterMode.Reading, TeleprompterMode.Replica -> StageScreen(state, viewModel)
+        return
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.showTranscriptionSnackbar) {
+        if (state.showTranscriptionSnackbar) {
+            val result = snackbarHostState.showSnackbar(
+                message = "Video synced — ${state.engineDetails}",
+                actionLabel = "Launch →",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.dispatch(TpIntent.StartReplicaMode)
+            }
+            viewModel.dispatch(TpIntent.DismissTranscriptionSnackbar)
+        }
+    }
+
+    Scaffold(
+        containerColor = DeepForestGreen,
+        bottomBar = { TpBottomNavBar(state, viewModel) },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = CardForestGreen,
+                    contentColor = SoftWarmWhite,
+                    actionColor = GoldenrodYellow,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
+                )
+            }
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding).statusBarsPadding()) {
+            AnimatedContent(
+                targetState = state.selectedTab,
+                transitionSpec = {
+                    val direction = if (targetState.ordinal > initialState.ordinal)
+                        AnimatedContentTransitionScope.SlideDirection.Start
+                    else
+                        AnimatedContentTransitionScope.SlideDirection.End
+                    slideIntoContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeIn(tween(280)) togetherWith
+                            slideOutOfContainer(direction, tween(280, easing = EaseInOutCubic)) + fadeOut(tween(280))
+                },
+                label = "TabTransition"
+            ) { tab ->
+                when (tab) {
+                    AppTab.TELEPROMPTER -> TeleprompterTab(state, viewModel)
+                    AppTab.WORDS -> WordMasterTab(state, viewModel)
+                    AppTab.STUDIO -> StudioTab(state, viewModel)
+                }
+            }
         }
     }
 }
