@@ -4,15 +4,21 @@ import android.Manifest
 import android.net.Uri
 import android.os.Bundle
 import android.app.Application
+import android.content.Context
+import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.FileOutputStream
 import java.io.File
+import java.util.Locale
+import java.util.UUID
 import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
@@ -784,7 +790,11 @@ data class TpState(
     val vocabAnswered: Boolean = false,
     val vocabSelectedAnswer: String = "",
     val vocabShowingResult: Boolean = false,
-    val transcriptionReadyDismissed: Boolean = false
+    val transcriptionReadyDismissed: Boolean = false,
+
+    // NEW: TTS State Fields
+    val isTtsSpeaking: Boolean = false,
+    val isTtsReady: Boolean = false
 )
 
 sealed class TpIntent {
@@ -809,6 +819,12 @@ sealed class TpIntent {
     object NextVocabWord : TpIntent()
     data class AnswerVocabMCQ(val selectedAnswer: String) : TpIntent()
     object DismissTranscriptionReady : TpIntent()
+
+    // NEW: TTS Intents
+    object SpeakCurrentWord : TpIntent()
+    object SpeakCurrentWordSlow : TpIntent()
+    object StopSpeaking : TpIntent()
+    data class TtsReady(val success: Boolean) : TpIntent()
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -825,6 +841,54 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val VOSK_MODEL_ZIP  = "vosk-model.zip"
     private val VOSK_MODEL_DIR  = "vosk-model-small-en-us-0.15"
+
+    // TTS Implementation
+    private var tts: TextToSpeech? = null
+    private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    init {
+        tts = TextToSpeech(app) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = tts?.setLanguage(Locale.US)
+                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            _state.update { it.copy(isTtsSpeaking = true) }
+                        }
+                        override fun onDone(utteranceId: String?) {
+                            _state.update { it.copy(isTtsSpeaking = false) }
+                        }
+                        override fun onError(utteranceId: String?) {
+                            _state.update { it.copy(isTtsSpeaking = false) }
+                        }
+                    })
+                    dispatch(TpIntent.TtsReady(true))
+                } else {
+                    dispatch(TpIntent.TtsReady(false))
+                }
+            } else {
+                dispatch(TpIntent.TtsReady(false))
+            }
+        }
+    }
+
+    override fun onCleared() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onCleared()
+    }
+
+    private fun speakWord(rate: Float) {
+        // Respect silent and vibrate modes (no auto-play annoyance)
+        if (audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT ||
+            audioManager.ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
+            return
+        }
+
+        tts?.setSpeechRate(rate)
+        val wordToSpeak = VOCAB_WORDS[_state.value.currentVocabIndex].word
+        tts?.speak(wordToSpeak, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+    }
 
     fun dispatch(intent: TpIntent) {
         when (intent) {
@@ -862,17 +926,21 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 )
             }
 
-            TpIntent.NextVocabWord -> _state.update {
-                var nextIdx = VOCAB_WORDS.indices.random()
-                while (nextIdx == it.currentVocabIndex && VOCAB_WORDS.size > 1) {
-                    nextIdx = VOCAB_WORDS.indices.random()
+            TpIntent.NextVocabWord -> {
+                tts?.stop() // Instantly kill audio when navigating away
+                _state.update {
+                    var nextIdx = VOCAB_WORDS.indices.random()
+                    while (nextIdx == it.currentVocabIndex && VOCAB_WORDS.size > 1) {
+                        nextIdx = VOCAB_WORDS.indices.random()
+                    }
+                    it.copy(
+                        currentVocabIndex = nextIdx,
+                        vocabAnswered = false,
+                        vocabSelectedAnswer = "",
+                        vocabShowingResult = false,
+                        isTtsSpeaking = false
+                    )
                 }
-                it.copy(
-                    currentVocabIndex = nextIdx,
-                    vocabAnswered = false,
-                    vocabSelectedAnswer = "",
-                    vocabShowingResult = false
-                )
             }
             is TpIntent.AnswerVocabMCQ -> _state.update {
                 it.copy(
@@ -883,6 +951,15 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             TpIntent.DismissTranscriptionReady -> _state.update {
                 it.copy(transcriptionReadyDismissed = true)
+            }
+
+            // TTS Handlers
+            is TpIntent.TtsReady -> _state.update { it.copy(isTtsReady = intent.success) }
+            TpIntent.SpeakCurrentWord -> speakWord(1.0f)
+            TpIntent.SpeakCurrentWordSlow -> speakWord(0.75f)
+            TpIntent.StopSpeaking -> {
+                tts?.stop()
+                _state.update { it.copy(isTtsSpeaking = false) }
             }
         }
     }
@@ -1470,8 +1547,6 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
         else           -> SoftWarmWhite
     }
 
-    // Beautiful step-down sizing that preserves the massive 48sp font for most words
-    // but gracefully shrinks just enough for the long ones without wrapping.
     val wordLength = vocabWord.word.length
     val vocabFontSize = when {
         wordLength >= 13 -> 28.sp
@@ -1637,13 +1712,34 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                                 maxLines = 1
                             )
 
-                            Text(
-                                text = vocabWord.pronunciation,
-                                color = categoryColor.copy(alpha = 0.8f),
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = pronunFontSize,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(top = 4.dp)
-                            )
+                            ) {
+                                Text(
+                                    text = vocabWord.pronunciation,
+                                    color = categoryColor.copy(alpha = 0.8f),
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = pronunFontSize,
+                                )
+
+                                if (state.isTtsReady) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.VolumeUp,
+                                        contentDescription = "Hear pronunciation",
+                                        tint = if (state.isTtsSpeaking) categoryColor else categoryColor.copy(alpha = 0.55f),
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onTap = { viewModel.dispatch(TpIntent.SpeakCurrentWord) },
+                                                    onLongPress = { viewModel.dispatch(TpIntent.SpeakCurrentWordSlow) }
+                                                )
+                                            }
+                                    )
+                                }
+                            }
                         }
                     }
 
