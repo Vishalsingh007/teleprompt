@@ -40,6 +40,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -141,553 +142,989 @@ data class VocabWord(
 )
 
 val VOCAB_WORDS = listOf(
-    // ── ORIGINAL 20 WORDS (PRESERVED) ──────────────────────────────────────────────────
+    // ── ORIGINAL 20 WORDS ──────────────────────────────────────────────────
     VocabWord("Perspicacious", "per·spi·CA·cious", "adjective",
         "Having a ready insight; shrewd and discerning beyond ordinary perception",
         "A perspicacious speaker always understands their audience before uttering a word.",
-        listOf("Speaking with unnecessary complexity", "Moving with graceful elegance", "Relating to royal ancestry"),
+        listOf(
+            "Possessing an unusually calm and measured manner when under significant pressure",
+            "Demonstrating exceptional physical coordination and awareness of one's immediate surroundings",
+            "Having a natural gift for vivid and expressive use of spoken language"
+        ),
         "Intellectual"),
     VocabWord("Mellifluous", "mel·LIF·lu·ous", "adjective",
         "Sweet or musical in tone; smooth and pleasant to hear, like honey flowing",
         "Her mellifluous voice commanded the room without ever needing to rise above a whisper.",
-        listOf("Filled with nervous anxiety", "Excessively dramatic in speech", "Relating to mathematical precision"),
+        listOf(
+            "Harsh or grating in tone; difficult and highly unpleasant to endure over time",
+            "Quick or erratic in rhythm; completely lacking in consistent and predictable pacing",
+            "Deep or resonant in pitch; rumbling and intensely powerful to experience firsthand"
+        ),
         "Eloquent"),
     VocabWord("Magnanimous", "mag·NAN·i·mous", "adjective",
         "Generous and forgiving, especially toward a rival or less powerful person; noble of mind",
         "The magnanimous king pardoned his enemies after victory, earning greater loyalty than conquest ever could.",
-        listOf("Extremely cautious and calculating", "Obsessed with personal appearance", "Stubbornly resistant to change"),
+        listOf(
+            "Strict and unyielding, particularly toward a subordinate or less experienced team member",
+            "Calculated and deeply cautious, primarily when dealing with unexpected financial or social situations",
+            "Obsessed with superficial appearances; completely driven by public perception rather than moral duty"
+        ),
         "Royal"),
     VocabWord("Indefatigable", "in·de·FAT·i·ga·ble", "adjective",
         "Persisting tirelessly; incapable of being fatigued regardless of difficulty or duration",
         "Only an indefatigable orator could speak for three hours and leave the audience wanting more.",
-        listOf("Easily distracted by minor details", "Dependent on external validation", "Prone to emotional outbursts"),
+        listOf(
+            "Yielding quickly under pressure; unable to maintain focus during complex or tedious tasks",
+            "Easily distracted by external stimuli; prone to shifting attention away from the primary objective",
+            "Dependent entirely on external validation; lacking any internal source of personal motivation"
+        ),
         "Powerful"),
     VocabWord("Eloquent", "EL·o·quent", "adjective",
         "Fluent and persuasive in speech; able to express ideas with clarity, power and beauty",
         "An eloquent argument does not shout — it guides the listener to your conclusion as though it were their own.",
-        listOf("Technically precise but cold", "Overly dramatic and theatrical", "Speaking only in metaphors"),
+        listOf(
+            "Hesitant and confused in expression; struggling to convey complex or highly nuanced concepts",
+            "Technically precise but emotionally void; conveying information strictly through literal and dry terminology",
+            "Aggressive and dominating in tone; seeking to overpower the listener rather than convince them"
+        ),
         "Eloquent"),
     VocabWord("Sagacious", "sa·GA·cious", "adjective",
         "Having or showing keen mental discernment and good judgement; profoundly wise",
         "A sagacious communicator knows when silence speaks louder than any carefully chosen word.",
-        listOf("Overly confident without evidence", "Highly emotional in reasoning", "Focused purely on aesthetics"),
+        listOf(
+            "Acting impulsively without foresight; prone to making rushed and poorly considered decisions",
+            "Relying entirely on intense emotional responses rather than logical or measured analysis",
+            "Possessing deep knowledge in one extremely narrow and specific academic discipline exclusively"
+        ),
         "Intellectual"),
     VocabWord("Loquacious", "lo·QUA·cious", "adjective",
         "Tending to talk a great deal; using more words than necessary, yet doing so with flair",
         "The loquacious host filled every silence with anecdote, never allowing discomfort to settle.",
-        listOf("Refusing to speak publicly", "Speaking only in whispers", "Communicating through gesture alone"),
+        listOf(
+            "Preferring to remain completely silent; communicating exclusively through written or nonverbal methods",
+            "Speaking in short, abrupt sentences; refusing to elaborate on any given topic",
+            "Possessing an unusually quiet and timid voice that is incredibly difficult to hear clearly"
+        ),
         "Eloquent"),
     VocabWord("Ebullient", "e·BUL·lient", "adjective",
         "Cheerful and full of energy; overflowing with enthusiasm and high spirits",
         "Her ebullient delivery transformed an ordinary script into a performance audiences remembered for years.",
-        listOf("Calm and deeply reserved", "Methodically slow in thinking", "Pessimistic about outcomes"),
+        listOf(
+            "Somber and deeply reflective; exhibiting a serious and entirely unapproachable public demeanor",
+            "Methodical and painstakingly slow; moving through tasks with deliberate and exhausting caution",
+            "Chronically pessimistic about future outcomes; expecting the absolute worst in every possible scenario"
+        ),
         "Powerful"),
     VocabWord("Sanguine", "SAN·guine", "adjective",
         "Optimistic, especially in a difficult situation; confidently positive about uncertain outcomes",
         "Remain sanguine in front of the camera — the audience mirrors whatever energy the speaker projects.",
-        listOf("Deeply suspicious of others", "Overly cautious about risks", "Prone to self-doubt"),
+        listOf(
+            "Pessimistic, particularly during challenging events; highly fearful of potentially negative future results",
+            "Deeply suspicious of the motives of others; assuming betrayal at every possible opportunity",
+            "Easily overwhelmed by sudden stress; completely unable to function during unexpected public crises"
+        ),
         "Royal"),
     VocabWord("Erudite", "ER·u·dite", "adjective",
         "Having or showing great knowledge or learning acquired through extensive study and curiosity",
         "An erudite speaker earns authority not through volume but through the weight of what they know.",
-        listOf("Knowledgeable only in one narrow field", "Skilled primarily with hands", "Experienced through action alone"),
+        listOf(
+            "Skilled exclusively in physical labor; possessing virtually no formal education or theoretical background",
+            "Speaking confidently despite lacking any factual basis; relying entirely on rumor and unproven anecdotes",
+            "Naturally gifted in social situations but struggling significantly with complex intellectual concepts"
+        ),
         "Intellectual"),
     VocabWord("Fastidious", "fas·TID·i·ous", "adjective",
         "Very attentive to accuracy, detail and quality; difficult to please; meticulous to a fault",
         "Be fastidious about your script — every unnecessary word is dead weight your audience must carry.",
-        listOf("Careless about personal appearance", "Easily satisfied with approximations", "Unwilling to review work"),
+        listOf(
+            "Careless and entirely sloppy; consistently willing to accept mediocre or heavily flawed results",
+            "Highly flexible and easygoing; completely unconcerned with rules, regulations, or strict quality standards",
+            "Working quickly and recklessly; prioritizing sheer volume of output over any measure of accuracy"
+        ),
         "Royal"),
     VocabWord("Tenacious", "te·NA·cious", "adjective",
         "Tending to keep a firm hold; not easily discouraged; persistent with extraordinary grip",
         "A tenacious creator does not abandon their voice simply because the first ten videos underperformed.",
-        listOf("Easily swayed by popular opinion", "Quick to abandon difficult tasks", "Flexible to the point of inconsistency"),
+        listOf(
+            "Quick to surrender at the first obstacle; easily swayed to abandon long-term personal goals",
+            "Highly flexible and accommodating; willing to change core beliefs to please the current audience",
+            "Lacking any strong personal convictions; generally indifferent to whether projects succeed or ultimately fail"
+        ),
         "Powerful"),
     VocabWord("Vivacious", "vi·VA·cious", "adjective",
         "Attractively lively and animated; radiating vitality and a contagious enthusiasm for life",
         "A vivacious on-screen presence is not born — it is crafted through deliberate study of delivery.",
-        listOf("Intensely quiet and contemplative", "Serious to the point of severity", "Focused exclusively on accuracy"),
+        listOf(
+            "Intensely quiet and highly contemplative; avoiding any unnecessary physical movement or vocal expression",
+            "Stern, serious, and completely unsmiling; maintaining a rigid and highly formal posture at all times",
+            "Moving slowly and sluggishly; projecting an overwhelming sense of deep exhaustion and chronic boredom"
+        ),
         "Eloquent"),
     VocabWord("Lucid", "LU·cid", "adjective",
         "Expressed clearly and easily understood; mentally sharp and brilliantly articulate",
         "The most powerful speeches are not the most complex — they are the most lucid.",
-        listOf("Highly complex and layered", "Deliberately ambiguous", "Open to multiple interpretations"),
+        listOf(
+            "Highly convoluted and layered with jargon; intentionally designed to confuse the average listener entirely",
+            "Deliberately ambiguous and vague; leaving the core message open to dozens of conflicting interpretations",
+            "Spoken with a heavy, thick accent that makes accurate verbal comprehension nearly impossible"
+        ),
         "Intellectual"),
     VocabWord("Imperious", "im·PE·ri·ous", "adjective",
         "Assuming power or authority without justification; having the bearing and confidence of royalty",
         "He entered the room with an imperious calm that made everyone present feel they were in an audience.",
-        listOf("Timid and self-effacing", "Endlessly seeking approval", "Reluctant to take positions"),
+        listOf(
+            "Timid, shy, and entirely self-effacing; constantly seeking permission before speaking or taking action",
+            "Highly democratic and exceptionally collaborative; refusing to make decisions without absolute team consensus",
+            "Clumsy, socially awkward, and deeply uncomfortable when placed in any position of visible leadership"
+        ),
         "Royal"),
     VocabWord("Articulate", "ar·TIC·u·late", "adjective",
         "Having or showing the ability to speak fluently and coherently; expressing ideas with precision",
         "To be articulate is to respect your audience enough to say exactly what you mean, no more, no less.",
-        listOf("Speaking rapidly without pause", "Using technical language exclusively", "Relying on visual aids"),
+        listOf(
+            "Stuttering heavily and constantly searching for words; completely unable to finish a single cohesive thought",
+            "Speaking incredibly rapidly without pausing for breath; overwhelming the listener with an endless wall of sound",
+            "Communicating exclusively through obscure visual metaphors; refusing to offer literal or straightforward verbal explanations"
+        ),
         "Eloquent"),
     VocabWord("Resplendent", "re·SPLEN·dent", "adjective",
         "Attractive and impressive through being richly colourful or sumptuous; dazzling in appearance",
         "A resplendent vocabulary does not merely describe the world — it elevates it.",
-        listOf("Quietly understated and minimal", "Deliberately plain and simple", "Blending into the background"),
+        listOf(
+            "Quietly understated and extremely minimal; deliberately blending seamlessly into the surrounding background environment",
+            "Dull, faded, and entirely uninteresting; completely lacking any visual flair or distinguishing characteristics",
+            "Cheap, poorly constructed, and obviously damaged; visibly showing severe signs of long-term neglect"
+        ),
         "Royal"),
     VocabWord("Venerable", "VEN·er·a·ble", "adjective",
         "Accorded a great deal of respect, especially because of age, wisdom, or character",
         "Speak like someone whose words will one day be considered venerable — because they just might be.",
-        listOf("Young and untested", "Controversial and divisive", "Easily dismissed"),
+        listOf(
+            "Young, naive, and entirely untested; lacking the life experience required to offer meaningful guidance",
+            "Widely despised and openly mocked; famous only for committing severe historical blunders and mistakes",
+            "Easily dismissed and frequently forgotten; possessing absolutely no lasting influence on the surrounding culture"
+        ),
         "Royal"),
     VocabWord("Formidable", "FOR·mi·da·ble", "adjective",
         "Inspiring fear or respect through being impressively large, powerful, intense or capable",
         "A formidable communicator does not raise their voice — they lower it, and the room goes silent.",
-        listOf("Easily approachable and gentle", "Lacking in presence", "Soft-spoken to a fault"),
+        listOf(
+            "Easily approachable, gentle, and utterly harmless; posing absolutely no threat or challenge to anyone",
+            "Small, frail, and entirely insignificant; easily overpowered by even the most basic of counterarguments",
+            "Soft-spoken, highly agreeable, and completely passive; lacking any sort of commanding stage presence"
+        ),
         "Powerful"),
     VocabWord("Gravitas", "GRAV·i·tas", "noun",
         "Dignity, seriousness, and solemnity of manner; the quality that makes people listen",
         "Gravitas cannot be performed — it accumulates through years of meaning every word you say.",
-        listOf("Lightness and comedic ease", "Physical imposing stature only", "Speed of verbal delivery"),
+        listOf(
+            "A persistent sense of lightness and comedic ease; relying strictly on humor to maintain audience engagement",
+            "A physical imposing stature without any intellectual weight; commanding attention strictly through sheer size",
+            "An extremely rapid speed of verbal delivery; using an overwhelming pace to prevent any questions or interruptions"
+        ),
         "Powerful"),
 
     // ── NEW EXPANSION PACK ─────────────────────────────────────────────────────────────
     VocabWord("Magisterial", "ma·jis·TEER·e·al", "adjective",
         "Having or showing great authority; dictatorial",
         "He delivered the opening hook with a magisterial tone that demanded instant respect.",
-        listOf("Lacking any real power", "Speaking with nervous hesitation", "Relating to common folk"),
+        listOf(
+            "Acting with an overly submissive demeanor in the presence of more powerful figures",
+            "Exhibiting a complete lack of clear direction when faced with difficult or stressful circumstances",
+            "Demonstrating a strong preference for highly collaborative and entirely democratic decision-making processes"
+        ),
         "Royal"),
     VocabWord("Suzerain", "SOO·ze·rain", "noun",
         "A sovereign or a state having some control over another state",
         "In the niche of tech reviews, she acted as the undisputed suzerain of the platform.",
-        listOf("A lowly servant or assistant", "A type of ancient microphone", "A completely isolated individual"),
+        listOf(
+            "A subordinate individual who assists a primary ruler in executing daily administrative decisions",
+            "An ancient mechanical device used historically to project a speaker's voice across long distances",
+            "A completely isolated territory that refuses to engage in any form of international commerce"
+        ),
         "Royal"),
     VocabWord("Palatine", "PAL·a·tine", "adjective",
         "Having royal authority or privileges",
         "The studio was decorated with a palatine elegance that elevated the entire production.",
-        listOf("Cheap, rushed, and unpolished", "Located entirely outdoors", "Having absolutely no power"),
+        listOf(
+            "Demonstrating a cheap, rushed, and unpolished aesthetic typical of amateur broadcast attempts",
+            "Located entirely outdoors without any formal shelter or dedicated environmental protections",
+            "Possessing absolutely no inherent power, influence, or measurable authority within the existing organization"
+        ),
         "Royal"),
     VocabWord("Patrician", "pa·TRICH·an", "adjective",
         "Belonging to or characteristic of the aristocracy",
         "Her patrician vocabulary made every sentence sound like a highly polished essay.",
-        listOf("Unrefined and highly common", "Clumsy and prone to mistakes", "Lacking any formal education"),
+        listOf(
+            "Highly unrefined and common; utilizing slang and colloquialisms to appeal to a broad audience",
+            "Clumsy and frequently prone to making embarrassing social or professional public mistakes",
+            "Lacking any formal education or foundational understanding of the subject matter being discussed"
+        ),
         "Royal"),
     VocabWord("August", "aw·GUST", "adjective",
         "Respected and impressive; majestic",
         "The august panel of creators listened to his presentation with absolute silence.",
-        listOf("Young, foolish, and naive", "Quick to anger and shout", "Easily distracted by noise"),
+        listOf(
+            "Young, foolish, and incredibly naive; completely lacking the necessary experience to command an audience",
+            "Quick to intense anger and prone to shouting unpredictably during public debates or discussions",
+            "Easily distracted by minor background noises and completely unable to maintain a focused demeanor"
+        ),
         "Royal"),
     VocabWord("Baronial", "ba·RO·ni·al", "adjective",
         "Belonging or relating to a baron; grand and impressive",
         "His baronial studio set gave the video a premium, network-television aesthetic.",
-        listOf("Cramped, cheap, and dark", "Highly disorganized and messy", "Lacking any proper lighting"),
+        listOf(
+            "Cramped, visually cheap, and noticeably dark; giving off the distinct impression of a tight budget",
+            "Highly disorganized and aggressively messy; featuring visible clutter scattered across the background",
+            "Completely lacking any proper lighting setup or professional audio treatment whatsoever"
+        ),
         "Royal"),
     VocabWord("Regnant", "REG·nant", "adjective",
         "Reigning; ruling; currently having the greatest influence",
         "As the regnant expert in the field, his tutorials were treated as absolute law.",
-        listOf("Overtaken and entirely forgotten", "Serving as a lowly assistant", "Banished from the community"),
+        listOf(
+            "Overtaken by modern trends and entirely forgotten by the current generation of active consumers",
+            "Serving humbly as a lowly assistant to the primary recognized leaders within the industry",
+            "Permanently banished from the community following a highly publicized and controversial dispute"
+        ),
         "Royal"),
     VocabWord("Preeminent", "pre·EM·i·nent", "adjective",
         "Surpassing all others; very distinguished in some way",
         "She is the preeminent voice in documentary storytelling on the platform.",
-        listOf("The absolute worst in the group", "Average and entirely forgettable", "A complete beginner"),
+        listOf(
+            "Considered to be the absolute worst performer within the current competitive group of peers",
+            "Perfectly average and entirely forgettable; blending seamlessly into the vast crowd of similar creators",
+            "Operating strictly as a complete beginner with absolutely zero prior industry or technical experience"
+        ),
         "Royal"),
     VocabWord("Peerless", "PEER·less", "adjective",
         "Unequaled; unrivaled",
         "His ability to seamlessly transition between topics is entirely peerless.",
-        listOf("Exactly average and common", "Worse than everyone else", "Easily replicated by AI"),
+        listOf(
+            "Exactly average and incredibly common; offering nothing distinct from the established industry standard",
+            "Demonstrably worse than almost everyone else currently attempting to perform the exact same task",
+            "Easily and perfectly replicated by modern artificial intelligence software without any noticeable human input"
+        ),
         "Royal"),
     VocabWord("Illustrious", "il·LUS·tri·ous", "adjective",
         "Well known, respected, and admired for past achievements",
         "The illustrious guest brought instant credibility to the podcast.",
-        listOf("Unknown and completely unproven", "Infamous for bad behavior", "Lacking any real skill"),
+        listOf(
+            "Completely unknown and entirely unproven; lacking any track record of past public success",
+            "Deeply infamous for highly toxic behavior and universally shunned by reputable industry professionals",
+            "Lacking any real technical skill or verifiable talent despite attempting to present as an authority"
+        ),
         "Royal"),
     VocabWord("Exalted", "eg·ZAWL·ted", "adjective",
         "Placed at a high or powerful level; held in high regard",
         "She spoke from an exalted position of authority, earned through years of mastery.",
-        listOf("Cast down and defeated", "Hidden from public view", "Filled with deep sorrow"),
+        listOf(
+            "Cast down and utterly defeated; stripped of all previous ranks, titles, and public honors",
+            "Deliberately hidden from public view; operating entirely in secret without any external recognition",
+            "Filled with deep and persistent sorrow; unable to project any sense of positive forward momentum"
+        ),
         "Royal"),
     VocabWord("Imperial", "im·PEER·i·al", "adjective",
         "Relating to an empire or an emperor; majestic",
         "The orchestral soundtrack gave the video essay an imperial, cinematic weight.",
-        listOf("Peasant-like and highly common", "Cheap, tinny, and low-quality", "Completely silent and dull"),
+        listOf(
+            "Peasant-like and highly common; featuring a rough and completely unpolished aesthetic tone",
+            "Cheap, tinny, and incredibly low-quality; displaying absolutely no attention to production value",
+            "Completely silent and intensely dull; lacking any background audio or dynamic visual elements"
+        ),
         "Royal"),
     VocabWord("Majestic", "ma·JES·tic", "adjective",
         "Having or showing impressive beauty or dignity",
         "The pacing of her speech was majestic, commanding the stage without ever rushing.",
-        listOf("Small and insignificant", "Comical and lighthearted", "Disorganized and chaotic"),
+        listOf(
+            "Small, weak, and highly insignificant; failing to make any lasting impression on the audience",
+            "Intentionally comical and deeply lighthearted; seeking strictly to entertain rather than to inform",
+            "Disorganized, entirely chaotic, and rushed; clearly demonstrating a complete lack of proper preparation"
+        ),
         "Royal"),
     VocabWord("Statuesque", "stat·u·ESK", "adjective",
         "Attractively tall and dignified",
         "He maintained a statuesque posture throughout the entire hour-long presentation.",
-        listOf("Slouching and looking defeated", "Constantly pacing and fidgeting", "Hiding behind the podium"),
+        listOf(
+            "Slouching constantly and looking deeply defeated; failing to maintain proper stage or camera presence",
+            "Constantly pacing back and forth and fidgeting nervously with various objects during the presentation",
+            "Actively hiding behind the podium or out of the camera frame to avoid direct visual contact"
+        ),
         "Royal"),
     VocabWord("Chivalric", "shi·VAL·ric", "adjective",
         "Relating to the qualities idealized by knighthood, such as courage and honor",
         "He offered a chivalric defense of his peers when the controversy broke out.",
-        listOf("Cowardly and avoiding conflict", "Deeply selfish and rude", "Speaking entirely in slang"),
+        listOf(
+            "Deeply cowardly and actively avoiding any form of direct conflict or necessary confrontation",
+            "Intensely selfish and noticeably rude; prioritizing personal gain above any shared moral code",
+            "Speaking entirely in modern internet slang rather than utilizing formal or structured language"
+        ),
         "Royal"),
     VocabWord("Courtly", "COURT·ly", "adjective",
         "Polite, refined, and elegant",
         "His courtly demeanor made the interview subject feel instantly at ease on camera.",
-        listOf("Rude, brash, and loud", "Clumsy and socially awkward", "Highly aggressive and hostile"),
+        listOf(
+            "Incredibly rude, brash, and excessively loud; alienating guests through sheer overwhelming aggression",
+            "Physically clumsy and deeply socially awkward; unable to read the basic tone of the room",
+            "Highly aggressive and overtly hostile; treating every conversation as a battle to be won"
+        ),
         "Royal"),
     VocabWord("Lordly", "LORD·ly", "adjective",
         "Of, characteristic of, or suitable for a lord; grand and magnificent",
         "He surveyed the massive auditorium with a lordly gaze before stepping up to the mic.",
-        listOf("Timid, shy, and looking down", "Acting like a total jester", "Slouching behind the podium"),
+        listOf(
+            "Timid, extremely shy, and constantly looking down; refusing to establish eye contact with the audience",
+            "Acting entirely like a theatrical jester; utilizing cheap physical comedy to distract from the core message",
+            "Slouching heavily behind the podium and mumbling into the microphone with a profound lack of energy"
+        ),
         "Royal"),
     VocabWord("Crowned", "CROWND", "adjective",
         "Invested with regal power; supremely successful or rewarded",
         "The video was crowned as the definitive guide to the subject by the community.",
-        listOf("Stripped of all titles", "Ignored by the algorithm completely", "Deleted for violating guidelines"),
+        listOf(
+            "Forcefully stripped of all previous titles and completely ostracized from the professional community",
+            "Entirely ignored by the platform algorithm; receiving absolutely no traction or meaningful external validation",
+            "Deleted instantly for violating platform guidelines regarding acceptable visual or auditory content standards"
+        ),
         "Royal"),
     VocabWord("Triumphant", "try·UMPH·ant", "adjective",
         "Having won a battle or contest; victorious",
         "He ended the stream with a triumphant smile, knowing they had crushed the goal.",
-        listOf("Defeated and looking downward", "Crying in absolute despair", "Apathetic and incredibly bored"),
+        listOf(
+            "Visibly defeated and looking downward; apologizing profusely for a severely failed or broken project",
+            "Crying in absolute despair after realizing the significant financial investment had been completely lost",
+            "Apathetic and incredibly bored; demonstrating zero emotional investment in the final outcome of the work"
+        ),
         "Royal"),
     VocabWord("Aristocratic", "a·ris·to·CRAT·ic", "adjective",
         "Distinguished in manners or bearing",
         "Her aristocratic posture conveyed absolute authority before she even checked the mic.",
-        listOf("Slouching and deeply unprofessional", "Nervous and highly fidgety", "Loud, obnoxious, and rude"),
+        listOf(
+            "Slouching constantly and behaving in a deeply unprofessional manner during the live broadcast segment",
+            "Visibly nervous and highly fidgety; constantly adjusting clothing and checking the time anxiously",
+            "Exceptionally loud, obnoxious, and intensely rude; speaking over others without any form of hesitation"
+        ),
         "Royal"),
     VocabWord("Princely", "PRINCE·ly", "adjective",
         "Sumptuous and splendid; worthy of a prince",
         "The sponsor paid a princely sum for the sixty-second integration in the video.",
-        listOf("Cheap, stingy, and poor", "Begging for spare change", "Lacking any real monetary value"),
+        listOf(
+            "Extremely cheap, painfully stingy, and noticeably poor; reflecting a highly restricted operating budget",
+            "Actively begging for spare change or relying entirely on small community donations to survive",
+            "Lacking any real monetary value or intrinsic worth despite a highly polished exterior appearance"
+        ),
         "Royal"),
     VocabWord("Monarchical", "mo·NARCH·i·cal", "adjective",
         "Relating to a monarch or the style of a king or queen",
         "He ruled his comment section with a monarchical hand, banning trolls instantly.",
-        listOf("Highly democratic and open", "Chaotic with no moderation", "Yielding completely to mob rule"),
+        listOf(
+            "Highly democratic and completely open; allowing the community to vote on every single creative decision",
+            "Entirely chaotic with absolutely no moderation; allowing toxic behavior to spread completely unchecked",
+            "Yielding completely to mob rule and constantly shifting opinions to align with the loudest voices"
+        ),
         "Royal"),
     VocabWord("Lionhearted", "LY·on·har·ted", "adjective",
         "Brave and determined",
         "It takes a lionhearted creator to pivot their channel's niche after millions of subs.",
-        listOf("Deeply afraid of public speaking", "Running from any conflict", "Easily intimidated by comments"),
+        listOf(
+            "Deeply afraid of public speaking and entirely unwilling to appear on camera under any circumstances",
+            "Running immediately from any form of conflict and refusing to stand by previously stated opinions",
+            "Easily intimidated by negative comments and highly likely to delete videos following minor criticism"
+        ),
         "Royal"),
     VocabWord("Magniloquent", "mag·NIL·o·quent", "adjective",
         "Using high-flown or bombastic language",
         "His magniloquent delivery turned a simple channel update into an epic saga.",
-        listOf("Speaking in a quiet whisper", "Using only one-syllable words", "Refusing to speak entirely"),
+        listOf(
+            "Speaking constantly in a quiet, barely audible whisper that frustrates the audience entirely",
+            "Using strictly one-syllable words in a deliberate attempt to sound as uneducated as possible",
+            "Refusing to speak entirely and relying exclusively on poorly animated visual text graphics"
+        ),
         "Eloquent"),
     VocabWord("Voluble", "VOL·yu·ble", "adjective",
         "Speaking or spoken incessantly and fluently",
         "The voluble host kept the energy high, never letting the podcast fall into a dead silence.",
-        listOf("Struggling to find the right words", "Speaking in a harsh, grating tone", "Preferring written communication"),
+        listOf(
+            "Struggling severely to find the right words; frequently pausing and uttering loud filler noises",
+            "Speaking in a harsh, deeply grating tone that causes the audience physical auditory discomfort",
+            "Preferring written communication exclusively and actively refusing any requests for live verbal interviews"
+        ),
         "Eloquent"),
     VocabWord("Sonorous", "SON·o·rous", "adjective",
         "Imposingly deep and full in sound",
         "His sonorous voice carried to the back of the auditorium without the need for a microphone.",
-        listOf("High-pitched and squeaky", "Quiet and easily ignored", "Harsh and grating to the ear"),
+        listOf(
+            "Incredibly high-pitched and unpleasantly squeaky; lacking any form of bass or vocal warmth",
+            "Exceptionally quiet and easily ignored; fading entirely into the ambient background noise",
+            "Harsh, metallic, and deeply grating to the ear; sounding like a broken digital speaker"
+        ),
         "Eloquent"),
     VocabWord("Lyrical", "LYR·i·cal", "adjective",
         "Expressing the writer's emotions in an imaginative and beautiful way",
         "The script was so lyrical it felt less like a video and more like spoken poetry.",
-        listOf("Harsh and overly technical", "Stuttering and completely broken", "Written without any emotion"),
+        listOf(
+            "Intensely harsh and overly technical; focusing strictly on dry statistics and raw data points",
+            "Stuttering frequently and completely broken; lacking any form of rhythmic or musical flow",
+            "Written entirely without any emotion or creative flair; reading like a legal terms of service document"
+        ),
         "Eloquent"),
     VocabWord("Euphonious", "yu·PHO·ni·ous", "adjective",
         "Pleasing to the ear",
         "The euphonious cadence of her sentences made the complex topic easy to listen to.",
-        listOf("Loud, clashing, and aggressive", "Completely silent", "Struggling with pronunciation"),
+        listOf(
+            "Overwhelmingly loud, sharply clashing, and aggressively painful to endure for long periods of time",
+            "Completely silent for long, deeply uncomfortable stretches that confuse the viewing audience entirely",
+            "Struggling constantly with basic pronunciation and stumbling over words of three or more syllables"
+        ),
         "Eloquent"),
     VocabWord("Dulcet", "DUL·cet", "adjective",
         "Sweet and soothing (often used ironically)",
         "He delivered the devastating critique in the most dulcet, calm tones imaginable.",
-        listOf("Screaming in absolute rage", "Speaking entirely in technical jargon", "Lacking any vocal control"),
+        listOf(
+            "Screaming loudly in absolute, uncontrolled rage directly into the primary recording microphone",
+            "Speaking entirely in dense technical jargon that alienates the vast majority of the audience",
+            "Lacking any vocal control whatsoever; fluctuating wildly between whispers and deafening shouts"
+        ),
         "Eloquent"),
     VocabWord("Facund", "FAK·und", "adjective",
         "Eloquent and articulate; capable of fluent speech",
         "A facund speaker can improvise a ten-minute monologue without a single filler word.",
-        listOf("Unable to form a complete sentence", "Speaking strictly from a script", "Highly anxious on stage"),
+        listOf(
+            "Completely unable to form a grammatically correct sentence without referencing a physical script",
+            "Speaking strictly from a rigid teleprompter and freezing completely if the text stops scrolling",
+            "Highly anxious on stage; exhibiting visible physical tremors and an inability to maintain eye contact"
+        ),
         "Eloquent"),
     VocabWord("Oratorical", "or·a·TOR·i·cal", "adjective",
         "Relating to the art or practice of public speaking",
         "His oratorical skills transformed a dry, boring script into a cinematic experience.",
-        listOf("Written down but never spoken", "Relating strictly to visual design", "Focused purely on audio editing"),
+        listOf(
+            "Written down meticulously but never actually spoken aloud to a live or recorded audience",
+            "Relating strictly to the visual design elements and graphical overlays of a video production",
+            "Focused purely on the backend audio editing and equalization processes rather than the performance itself"
+        ),
         "Eloquent"),
     VocabWord("Grandiloquent", "gran·DIL·o·quent", "adjective",
         "Pompous or extravagant in language, style, or manner",
         "His grandiloquent speech sounded impressive but actually contained very few facts.",
-        listOf("Speaking in a quiet, timid voice", "Refusing to use any long words", "Focused entirely on raw logic"),
+        listOf(
+            "Speaking constantly in a quiet, timid voice that fails to project past the first row",
+            "Refusing adamantly to use any long or complex words, resulting in a juvenile presentation",
+            "Focused entirely on raw logic and empirical data while abandoning any attempt at stylistic flair"
+        ),
         "Eloquent"),
     VocabWord("Silver-tongued", "SIL·ver-tongued", "adjective",
         "Persuasive and eloquent in speech",
         "The silver-tongued salesman convinced the audience to buy the course before the video ended.",
-        listOf("Stuttering and highly nervous", "Speaking with a harsh, grating voice", "Unable to form a complete sentence"),
+        listOf(
+            "Stuttering constantly and highly nervous; completely failing to build trust with the target audience",
+            "Speaking with a harsh, grating voice that actively repels listeners from engaging with the content",
+            "Unable to form a complete or cohesive argument without relying on extensive written bullet points"
+        ),
         "Eloquent"),
     VocabWord("Facile", "FAS·ile", "adjective",
         "Appearing neat and comprehensive only by ignoring the true complexities of an issue",
         "A facile argument might win a quick view, but it won't build a loyal subscriber base.",
-        listOf("Deeply complex and highly nuanced", "Struggling to articulate a point", "Based on heavy, dense academic study"),
+        listOf(
+            "Deeply complex and highly nuanced; requiring significant mental effort and concentration to fully understand",
+            "Struggling constantly to articulate a clear point; wandering through unrelated topics without resolution",
+            "Based entirely on heavy, dense academic study and peer-reviewed scientific literature without exception"
+        ),
         "Eloquent"),
     VocabWord("Resonance", "REZ·o·nance", "noun",
         "The quality in a sound of being deep, full, and reverberating",
         "Speaking from the diaphragm gives your voice a natural resonance that microphones love.",
-        listOf("A high, squeaky pitch", "A sudden loss of all audio", "Speaking too quickly to be understood"),
+        listOf(
+            "A high, aggressively squeaky pitch that causes immediate auditory fatigue in the listening audience",
+            "A sudden, unexpected loss of all audio recording capabilities during a critical live broadcast",
+            "Speaking far too quickly for the human ear or auto-captioning software to accurately process"
+        ),
         "Eloquent"),
     VocabWord("Diction", "DIC·tion", "noun",
         "The choice and use of words and phrases in speech or writing",
         "Precise diction ensures that your global audience understands every word despite the accent.",
-        listOf("Mumbling and slurring words", "The physical posture of a speaker", "The lighting setup in the room"),
+        listOf(
+            "Mumbling incoherently and heavily slurring words together to the point of complete incomprehensibility",
+            "The physical posture and staging of a speaker during a highly formal public presentation",
+            "The specific lighting setup and camera angle utilized in a professional broadcasting studio environment"
+        ),
         "Eloquent"),
     VocabWord("Enunciation", "e·nun·ci·A·tion", "noun",
         "The act of pronouncing words clearly",
         "Crisp enunciation allows the auto-captioning AI to perfectly transcribe your video without errors.",
-        listOf("Mumbling with a tightly closed mouth", "Shouting incoherently", "Speaking far too fast to hear"),
+        listOf(
+            "Mumbling continuously with a tightly closed mouth, resulting in deeply muffled and unclear audio",
+            "Shouting loudly and entirely incoherently; relying strictly on sheer volume rather than clarity",
+            "Speaking at a pace far too fast for any listener to properly hear the individual syllables"
+        ),
         "Eloquent"),
     VocabWord("Modulation", "mod·u·LA·tion", "noun",
         "Variation in the strength, tone, or pitch of one's voice",
         "Voice modulation is the ultimate key to holding an audience's attention during a long video.",
-        listOf("Speaking at one exact volume", "Writing a script incredibly fast", "Editing out all dead air"),
+        listOf(
+            "Speaking consistently at one exact, unchanging volume and pitch for the duration of the presentation",
+            "Writing a highly complex script incredibly fast without reviewing it for pacing or grammatical errors",
+            "Editing out absolutely all dead air and breathing noises, creating a highly unnatural audio flow"
+        ),
         "Eloquent"),
     VocabWord("Timbre", "TAM·ber", "noun",
         "The character or quality of a musical sound or voice",
         "The rich, warm timbre of his voice makes his audiobooks incredibly soothing to listen to.",
-        listOf("The volume level of a speaker", "The speed at which someone talks", "The physical microphone used"),
+        listOf(
+            "The absolute volume level at which a speaker chooses to project their voice during a speech",
+            "The literal speed or words-per-minute rate at which a presenter reads through their provided script",
+            "The physical brand and model of microphone utilized to capture the audio during the recording session"
+        ),
         "Eloquent"),
     VocabWord("Rhetoric", "RHET·o·ric", "noun",
         "The art of effective or persuasive speaking or writing",
         "Mastering rhetoric allows you to inspire action rather than just delivering dry information.",
-        listOf("The technical setup of a camera", "The process of uploading a file", "A physical microphone stand"),
+        listOf(
+            "The highly specific technical setup of a camera, including aperture, shutter speed, and ISO settings",
+            "The literal software process of rendering and uploading a finalized video file to the internet",
+            "A physical microphone stand or similar piece of hardware used to stabilize audio recording equipment"
+        ),
         "Eloquent"),
     VocabWord("Cadence", "CA·dence", "noun",
         "A modulation or inflection of the voice",
         "Mastering your vocal cadence prevents you from sounding like you are just reading a teleprompter.",
-        listOf("A single, flat monotone pitch", "The visual layout of a script", "The lighting setup in a studio"),
+        listOf(
+            "A single, entirely flat monotone pitch maintained relentlessly throughout the duration of the entire broadcast",
+            "The visual layout, font choice, and structural formatting of a script presented on a screen",
+            "The specific three-point lighting setup utilized in a high-end professional indoor broadcasting studio"
+        ),
         "Eloquent"),
     VocabWord("Phrasing", "PHRAS·ing", "noun",
         "The way in which something is expressed in words",
         "Adjusting the phrasing of your title can be the difference between ten views and ten million.",
-        listOf("The color grading of the video", "The physical stage design of the set", "The volume of the microphone"),
+        listOf(
+            "The post-production color grading and visual effects applied to the final cut of the video",
+            "The physical stage design, background props, and aesthetic set dressing of the recording environment",
+            "The absolute decibel volume captured by the microphone during the loudest peak of the performance"
+        ),
         "Eloquent"),
     VocabWord("Stirring", "STIR·ring", "adjective",
         "Causing strong emotion; rousing",
         "The stirring background music swelled perfectly as he delivered the final, powerful line.",
-        listOf("Putting the audience to sleep", "Completely silent and dull", "Annoying and highly distracting"),
+        listOf(
+            "Putting the audience to sleep through the use of an intensely boring and entirely flat delivery",
+            "Completely silent and utterly dull; lacking any element designed to capture or retain human attention",
+            "Highly annoying and deeply distracting; utilizing sound effects that actively frustrate the listening audience"
+        ),
         "Eloquent"),
     VocabWord("Ineffable", "in·EF·fa·ble", "adjective",
         "Too great or extreme to be expressed or described in words",
         "The speaker left the audience in a state of ineffable awe after the final revelation.",
-        listOf("Lacking any real substance", "Easily offended by minor things", "Quick to change opinions"),
+        listOf(
+            "Lacking any real substance or meaningful content; offering absolutely no value to the watching audience",
+            "Easily offended by minor things; highly reactive and prone to creating unnecessary public drama",
+            "Quick to change opinions frequently based purely on whatever trend is currently popular online"
+        ),
         "Eloquent"),
     VocabWord("Poignant", "POIN·yant", "adjective",
         "Evoking a keen sense of sadness or regret; deeply affecting",
         "The poignant silence at the end of the story moved the entire audience to tears.",
-        listOf("Loud, funny, and highly comedic", "Lacking any emotional impact", "Highly technical and dry"),
+        listOf(
+            "Extremely loud, highly funny, and purely comedic; aimed strictly at generating superficial internet laughs",
+            "Completely lacking any emotional impact; reading more like an instruction manual than a compelling story",
+            "Highly technical, deeply dry, and entirely devoid of any relatable human experience or personal narrative"
+        ),
         "Eloquent"),
     VocabWord("Glib", "GLIB", "adjective",
         "Fluent and voluble but insincere and shallow",
         "Avoid sounding glib; the camera easily detects when a speaker doesn't believe their own words.",
-        listOf("Deeply thoughtful and slow", "Stuttering with severe nervousness", "Speaking with heavy technical jargon"),
+        listOf(
+            "Deeply thoughtful and incredibly slow; carefully weighing the absolute truth of every single spoken syllable",
+            "Stuttering continuously with severe nervousness; visibly terrified of being judged by the watching audience",
+            "Speaking entirely with heavy technical jargon in an attempt to sound far more educated than reality"
+        ),
         "Eloquent"),
     VocabWord("Epistemological", "e·pis·te·mo·LOJ·i·cal", "adjective",
         "Relating to the theory of knowledge, especially with regard to its methods and validation",
         "The video took an epistemological dive into how we actually know what we know.",
-        listOf("Focused on physical workouts", "Relating to simple mathematics", "Based purely on emotional reactions"),
+        listOf(
+            "Focused exclusively on highly intense physical workouts and advanced athletic training regimens without academic foundation",
+            "Relating strictly to simple, entry-level mathematics and basic arithmetic principles suitable for young children",
+            "Based purely and entirely on rapid emotional reactions rather than any form of structured intellectual analysis"
+        ),
         "Intellectual"),
     VocabWord("Dialectical", "dy·a·LEC·ti·cal", "adjective",
         "Relating to the logical discussion of ideas and opinions",
         "Using a dialectical approach, he presented both sides of the argument before delivering his thesis.",
-        listOf("Refusing to hear other opinions", "Shouting down opponents entirely", "Speaking without any logic"),
+        listOf(
+            "Refusing aggressively to hear any opposing opinions and actively silencing those who attempt to disagree",
+            "Shouting down all opponents entirely; relying strictly on sheer volume rather than any reasoned debate",
+            "Speaking at length without utilizing any form of underlying logic, structure, or coherent thematic narrative"
+        ),
         "Intellectual"),
     VocabWord("Heuristic", "hyu·RIS·tic", "adjective",
         "Enabling a person to discover or learn something for themselves",
         "A heuristic teaching style keeps viewers engaged because they feel like they are solving the puzzle.",
-        listOf("Spoon-feeding answers slowly", "Refusing to explain anything at all", "Making things overly complicated"),
+        listOf(
+            "Spoon-feeding every single answer slowly and painfully, treating the audience as if they possess zero intelligence",
+            "Refusing to explain anything at all; leaving the audience entirely confused and lacking basic context",
+            "Making relatively simple concepts overly complicated in a deliberate attempt to sound artificially highly intelligent"
+        ),
         "Intellectual"),
     VocabWord("Axiomatic", "ax·i·o·MAT·ic", "adjective",
         "Self-evident or unquestionable",
         "In content creation, it is axiomatic that audio quality matters more than video quality.",
-        listOf("Highly doubtful and debated", "Completely unproven by science", "Incredibly difficult to understand"),
+        listOf(
+            "Highly doubtful and fiercely debated by experts across multiple distinct and respected professional academic disciplines",
+            "Completely unproven by any form of modern science and relying strictly on ancient, outdated superstitions",
+            "Incredibly difficult to understand without dedicating years of intense study to the highly specific subject"
+        ),
         "Intellectual"),
     VocabWord("Cogent", "CO·gent", "adjective",
         "Clear, logical, and convincing",
         "A cogent argument leaves the audience with absolutely no choice but to agree with your premise.",
-        listOf("Speaking with excessive emotion", "Lacking clear direction", "Repeating the exact same point blindly"),
+        listOf(
+            "Speaking with excessive, uncontrolled emotion that completely undermines the actual factual points being presented",
+            "Lacking any clear direction or structure; wandering aimlessly between completely unrelated and highly confusing topics",
+            "Repeating the exact same shallow point blindly without offering any new supporting evidence or nuanced details"
+        ),
         "Intellectual"),
     VocabWord("Incisive", "in·SY·siv", "adjective",
         "Intelligently analytical and clear-thinking",
         "Her incisive commentary cut straight through the noise and delivered pure value.",
-        listOf("Wandering off topic frequently", "Speaking with a heavy stutter", "Lacking any real substance"),
+        listOf(
+            "Wandering far off the main topic frequently and filling time with completely irrelevant personal stories",
+            "Speaking with a heavy stutter that makes it incredibly difficult for the listener to remain fully engaged",
+            "Lacking any real substance whatsoever; utilizing buzzwords exclusively to mask a complete absence of knowledge"
+        ),
         "Intellectual"),
     VocabWord("Pedantic", "pe·DAN·tic", "adjective",
         "Excessively concerned with minor details or rules; overscrupulous",
         "Don't be so pedantic about minor script deviations that you lose the natural flow of delivery.",
-        listOf("Careless and highly sloppy", "Ignoring all the rules entirely", "Focused only on the big picture"),
+        listOf(
+            "Careless and highly sloppy; demonstrating zero concern for accuracy, grammar, or fundamental factual correctness",
+            "Ignoring all established rules entirely and actively encouraging others to adopt a similarly reckless approach",
+            "Focused strictly and exclusively on the big picture while entirely ignoring the necessary foundational details"
+        ),
         "Intellectual"),
     VocabWord("Omniscient", "om·NISH·ent", "adjective",
         "Knowing everything",
         "You don't need to be omniscient to make a great video; you just need to share what you know honestly.",
-        listOf("Knowing absolutely nothing", "Refusing to learn new things", "Forgetting lines constantly"),
+        listOf(
+            "Knowing absolutely nothing about the subject matter yet projecting an air of supreme and unearned confidence",
+            "Refusing adamantly to learn new things or adapt to clearly changing circumstances in the market",
+            "Forgetting established lines constantly and relying heavily on producers to feed the script off-camera"
+        ),
         "Intellectual"),
     VocabWord("Socratic", "so·CRAT·ic", "adjective",
         "Relating to the method of asking questions to draw out answers and encourage insight",
         "The Socratic method of opening a video with a profound question guarantees high retention.",
-        listOf("Lecturing without allowing input", "Speaking only in statements", "Refusing to ask anything at all"),
+        listOf(
+            "Lecturing aggressively without ever allowing any input, questions, or feedback from the participating audience members",
+            "Speaking entirely and exclusively in rigid statements that leave absolutely no room for interpretation or debate",
+            "Refusing to ask anything at all; actively punishing anyone who dares to interrupt the primary monologue"
+        ),
         "Intellectual"),
     VocabWord("Pragmatic", "prag·MAT·ic", "adjective",
         "Dealing with things sensibly and realistically",
         "The most pragmatic speakers know that clear audio is far more important than 4K video.",
-        listOf("Lost in unrealistic fantasies", "Focused only on aesthetics", "Highly emotional and illogical"),
+        listOf(
+            "Lost constantly in entirely unrealistic fantasies that have absolutely zero application in the real working world",
+            "Focused strictly and exclusively on high-end visual aesthetics while ignoring the actual substance of the content",
+            "Highly emotional, intensely illogical, and prone to making sweeping decisions based strictly on temporary feelings"
+        ),
         "Intellectual"),
     VocabWord("Analytical", "an·a·LYT·i·cal", "adjective",
         "Relating to or using analysis or logical reasoning",
         "Her analytical review of the dashboard revealed exactly why the last video failed.",
-        listOf("Ignoring the data completely", "Guessing based on feelings alone", "Acting entirely on sudden impulse"),
+        listOf(
+            "Ignoring all available data completely and choosing to operate strictly on unverified gut instinct and hunches",
+            "Guessing entirely based on passing feelings alone without consulting any established historical or statistical precedents",
+            "Acting entirely on sudden impulse without ever pausing to consider the long-term strategic consequences involved"
+        ),
         "Intellectual"),
     VocabWord("Cerebral", "ce·RE·bral", "adjective",
         "Intellectual rather than emotional or physical",
         "The video essay took a cerebral approach, breaking down the complex theories perfectly.",
-        listOf("Purely emotional and highly reactive", "Focused entirely on physical comedy", "Lacking deep thought"),
+        listOf(
+            "Purely emotional and highly reactive; designing content specifically to trigger immediate outrage and internet drama",
+            "Focused entirely on broad physical comedy, utilizing slapstick humor rather than any form of elevated wit",
+            "Lacking deep thought completely; appealing strictly to the lowest possible common denominator of the viewing audience"
+        ),
         "Intellectual"),
     VocabWord("Trenchant", "TREN·chant", "adjective",
         "Vigorous or incisive in expression or style",
         "His trenchant critique of the industry went viral almost immediately.",
-        listOf("Dull, boring, and uninteresting", "Overly polite and cautious", "Speaking without any clear point"),
+        listOf(
+            "Dull, incredibly boring, and entirely uninteresting; guaranteed to put the majority of viewers completely to sleep",
+            "Overly polite, highly cautious, and actively avoiding saying anything that might potentially offend a single person",
+            "Speaking endlessly without making any clear point; rambling for hours without arriving at a cohesive conclusion"
+        ),
         "Intellectual"),
     VocabWord("Astute", "as·TUTE", "adjective",
         "Having an ability to accurately assess situations and turn them into an advantage",
         "An astute creator knows exactly when to pause for maximum dramatic effect.",
-        listOf("Completely unaware of surroundings", "Acting entirely on sudden impulse", "Refusing to plan ahead"),
+        listOf(
+            "Completely unaware of surrounding circumstances; frequently making highly inappropriate comments due to lack of situational reading",
+            "Acting entirely on sudden impulse without dedicating any time whatsoever to assessing the current environmental factors",
+            "Refusing adamantly to plan ahead for obvious contingencies, resulting in entirely avoidable and highly destructive public failures"
+        ),
         "Intellectual"),
     VocabWord("Empirical", "em·PIR·i·cal", "adjective",
         "Based on, concerned with, or verifiable by observation or experience",
         "Back up your storytelling with empirical evidence to completely cement your authority.",
-        listOf("Based purely on imagination", "Completely unproven by science", "Lacking any real-world application"),
+        listOf(
+            "Based purely on intense imagination and absolute fiction; possessing absolutely no grounding in objective, verifiable reality",
+            "Completely unproven by any accepted modern scientific methods; relying heavily on widely debunked historical myths",
+            "Lacking any practical real-world application; existing solely as a theoretical thought experiment with no tangible use"
+        ),
         "Intellectual"),
     VocabWord("Discerning", "dis·CERN·ing", "adjective",
         "Having or showing good judgment",
         "A discerning editor knows exactly which pauses to cut and which ones to leave in for impact.",
-        listOf("Blindly deleting footage", "Unable to tell good from bad", "Rushing without looking"),
+        listOf(
+            "Blindly deleting raw footage without reviewing it first; displaying a complete lack of critical editorial oversight",
+            "Entirely unable to tell high-quality material from utterly useless garbage when reviewing the daily production dailies",
+            "Rushing frantically through the editing process without looking closely at any of the actual fine details"
+        ),
         "Intellectual"),
     VocabWord("Rational", "RASH·on·al", "adjective",
         "Based on or in accordance with reason or logic",
         "A rational breakdown of the controversy performed much better than an angry, screaming rant.",
-        listOf("Highly emotional and screaming", "Completely illogical and random", "Based entirely on superstition"),
+        listOf(
+            "Highly emotional and frequently screaming directly into the lens; utilizing rage as the primary form of engagement",
+            "Completely illogical and entirely random; assembling arguments that actively contradict themselves within the same exact sentence",
+            "Based entirely on debunked superstition and wild conspiracy theories rather than any form of verified objective truth"
+        ),
         "Intellectual"),
     VocabWord("Philosophical", "phil·o·SOPH·i·cal", "adjective",
         "Relating or devoted to the study of the fundamental nature of knowledge, reality, and existence",
         "She took a philosophical approach to the hate comments, realizing they didn't matter.",
-        listOf("Highly reactive and deeply angry", "Focused purely on shallow drama", "Unable to think deeply"),
+        listOf(
+            "Highly reactive and deeply angry; interpreting every single minor critique as a massive and unforgivable personal attack",
+            "Focused purely on shallow internet drama and constantly seeking to provoke unnecessary conflict with other established creators",
+            "Unable to think deeply about complex subjects; demonstrating a profound lack of intellectual curiosity or extended focus"
+        ),
         "Intellectual"),
     VocabWord("Acute", "a·CUTE", "adjective",
         "Having or showing a perceptive understanding or insight",
         "His acute awareness of audience retention metrics allowed him to hack the algorithm completely.",
-        listOf("Dull, slow, and entirely oblivious", "Focused only on physical strength", "Lacking any understanding"),
+        listOf(
+            "Dull, slow, and entirely oblivious to rapidly changing trends that dictate success in the modern online marketplace",
+            "Focused exclusively and entirely on physical strength training while entirely ignoring any form of intellectual development",
+            "Lacking any fundamental understanding of how the core technology actually functions despite claiming to be an expert"
+        ),
         "Intellectual"),
     VocabWord("Epiphany", "e·PIPH·a·ny", "noun",
         "An experience of a sudden and striking realization",
         "A great explainer video guides the viewer toward an epiphany rather than just listing facts.",
-        listOf("A long, boring explanation", "A complete misunderstanding", "A physical feeling of intense fatigue"),
+        listOf(
+            "A long, incredibly boring explanation that actively discourages the audience from learning anything useful or practically applicable",
+            "A complete and utter misunderstanding of the core concept that results in the spread of highly dangerous misinformation",
+            "A physical feeling of intense fatigue that overcomes a viewer when subjected to poorly paced and unedited content"
+        ),
         "Intellectual"),
     VocabWord("Esoteric", "es·o·TER·ic", "adjective",
         "Intended for or likely to be understood by only a small number of people",
         "He translated esoteric academic research into stories that absolutely anyone could understand.",
-        listOf("Understood by everyone instantly", "Highly emotional and reactive", "Physically imposing and loud"),
+        listOf(
+            "Understood perfectly and instantly by absolutely everyone; featuring concepts so simple they require zero actual formal explanation",
+            "Highly emotional, deeply reactive, and completely lacking in any form of complex or nuanced underlying structural foundation",
+            "Physically imposing, aggressively loud, and designed specifically to intimidate the listener rather than actually educate them"
+        ),
         "Intellectual"),
     VocabWord("Pellucid", "pel·LU·cid", "adjective",
         "Translucently clear; easily understood",
         "She broke down the complex topic into pellucid explanations that delighted the viewers.",
-        listOf("Murky, confusing, and dark", "Overly long and highly repetitive", "Filled with technical jargon"),
+        listOf(
+            "Intentionally murky, highly confusing, and deliberately dark; designed specifically to obscure the true nature of the subject",
+            "Overly long, intensely repetitive, and actively boring; dragging out a simple point to an excruciatingly painful degree",
+            "Filled entirely with dense technical jargon that alienates ninety percent of the audience within the first thirty seconds"
+        ),
         "Intellectual"),
     VocabWord("Methodical", "me·THOD·i·cal", "adjective",
         "Done according to a systematic or established form of procedure",
         "His methodical scripting process ensured that not a single second of the video was wasted.",
-        listOf("Chaotic, random, and completely messy", "Rushed at the very last minute", "Completely improvised on the spot"),
+        listOf(
+            "Highly chaotic, entirely random, and completely messy; operating without any sort of underlying structure or established professional workflow",
+            "Rushed frantically at the very last possible minute, resulting in an end product filled with highly noticeable errors",
+            "Completely improvised entirely on the spot without any prior preparation, research, or even a basic functional outline"
+        ),
         "Intellectual"),
     VocabWord("Profound", "pro·FOUND", "adjective",
         "Very great or intense; having or showing great knowledge or insight",
         "Sometimes a ten-second pause can be vastly more profound than ten minutes of rapid talking.",
-        listOf("Shallow and lacking depth", "Easily forgotten", "Physically lightweight"),
+        listOf(
+            "Extremely shallow and entirely lacking in any meaningful depth; offering insights that a small child would already understand",
+            "Easily forgotten immediately after hearing it; possessing absolutely zero lasting impact on the mindset of the target audience",
+            "Physically lightweight and entirely inconsequential; providing no structural support to the overarching thesis being actively presented"
+        ),
         "Intellectual"),
     VocabWord("Puissant", "PWIS·ant", "adjective",
         "Having great power or influence",
         "The opening hook of the video was so puissant that viewer retention immediately skyrocketed.",
-        listOf("Weak and completely ineffective", "Quiet and easily ignored", "Lacking any emotional depth"),
+        listOf(
+            "Entirely weak and completely ineffective; failing utterly to persuade even the most highly receptive and agreeable audience members",
+            "Noticeably quiet and incredibly easily ignored; blending seamlessly into the background without making any sort of impression",
+            "Lacking any significant emotional depth or measurable societal impact; existing purely as a temporary piece of throwaway media"
+        ),
         "Powerful"),
     VocabWord("Redoubtable", "re·DOUBT·a·ble", "adjective",
         "Formidable, especially as an opponent",
         "He was a redoubtable debater, perfectly anticipating counterarguments before they were spoken.",
-        listOf("Easily defeated in an argument", "Friendly and overly accommodating", "Lacking any strong opinions"),
+        listOf(
+            "Easily and rapidly defeated in any form of logical argument; possessing no ability to successfully defend a core thesis",
+            "Overly friendly and deeply accommodating to a severe fault; refusing to stand firm on any established personal boundary",
+            "Lacking any strong, defined opinions entirely; drifting aimlessly based strictly on whoever spoke to them most recently"
+        ),
         "Powerful"),
     VocabWord("Stalwart", "STAL·wart", "adjective",
         "Loyal, reliable, and hardworking",
         "His stalwart community defended him fiercely in the comment section against the trolls.",
-        listOf("Fickle and quick to betray", "Lazy and completely unreliable", "Constantly changing opinions"),
+        listOf(
+            "Highly fickle and incredibly quick to betray close allies the very moment a situation becomes remotely difficult",
+            "Deeply lazy and completely unreliable; frequently failing to meet established deadlines or honor basic professional commitments entirely",
+            "Constantly and rapidly changing core opinions in a desperate attempt to continually appease the widest possible modern audience"
+        ),
         "Powerful"),
     VocabWord("Dauntless", "DAUNT·less", "adjective",
         "Showing fearlessness and determination",
         "It takes a dauntless creator to entirely pivot their channel's niche after millions of subscribers.",
-        listOf("Terrified of taking any risks", "Easily intimidated by comments", "Lazy and completely unmotivated"),
+        listOf(
+            "Absolutely terrified of taking any risks whatsoever; preferring to remain stagnant rather than attempting anything remotely new",
+            "Easily and severely intimidated by negative internet comments; frequently abandoning projects at the first sign of public pushback",
+            "Intensely lazy and completely unmotivated; refusing to put in the basic foundational effort required to achieve high-level success"
+        ),
         "Powerful"),
     VocabWord("Impervious", "im·PER·vi·ous", "adjective",
         "Unable to be affected by",
         "A true professional remains impervious to off-camera distractions while rolling.",
-        listOf("Easily distracted by anything", "Highly sensitive to criticism", "Prone to crying on set"),
+        listOf(
+            "Easily and completely distracted by absolutely anything in the environment; incapable of maintaining focus for more than a minute",
+            "Highly and visibly sensitive to even the mildest form of constructive criticism; taking every minor note entirely personally",
+            "Prone to breaking down and crying on set when faced with completely standard and highly expected minor production delays"
+        ),
         "Powerful"),
     VocabWord("Unflinching", "un·FLINCH·ing", "adjective",
         "Not showing fear or hesitation in the face of danger or difficulty",
         "She maintained an unflinching gaze with the camera lens, connecting deeply with the viewer.",
-        listOf("Constantly looking away", "Trembling with severe anxiety", "Easily distracted by movement"),
+        listOf(
+            "Constantly and nervously looking away from the camera lens; completely failing to establish any form of digital eye contact",
+            "Trembling visibly with severe anxiety during the entire duration of the required public speaking engagement or live presentation",
+            "Easily distracted by rapid background movement and entirely unable to deliver a single sentence without losing their place"
+        ),
         "Powerful"),
     VocabWord("Resolute", "REZ·o·lute", "adjective",
         "Admirably purposeful, determined, and unwavering",
         "Deliver your conclusion with a resolute tone so the audience knows exactly what to do next.",
-        listOf("Hesitant and deeply unsure", "Constantly changing your mind", "Speaking in a questioning tone"),
+        listOf(
+            "Highly hesitant and deeply unsure of themselves; frequently pausing to second-guess the validity of their own presented facts",
+            "Constantly and unpredictably changing their mind regarding the core message; confusing the audience entirely by the very end",
+            "Speaking entirely in an upward questioning tone; making established facts sound like unverified and highly suspicious personal opinions"
+        ),
         "Powerful"),
     VocabWord("Steadfast", "STED·fast", "adjective",
         "Resolutely or dutifully firm and unwavering",
         "Maintain steadfast eye contact with the lens to perfectly simulate a one-on-one conversation.",
-        listOf("Looking around nervously", "Quick to abandon your point", "Easily distracted by the crew"),
+        listOf(
+            "Looking around the room highly nervously; refusing to engage directly with the audience or maintain a strong posture",
+            "Incredibly quick to completely abandon a primary point the moment a single audience member displays minor visible confusion",
+            "Easily distracted by the production crew; frequently breaking character and ruining the illusion of a highly polished presentation"
+        ),
         "Powerful"),
     VocabWord("Unyielding", "un·YIELD·ing", "adjective",
         "Not giving way to pressure; hard or solid",
         "An unyielding commitment to upload consistency is the ultimate secret to algorithmic success.",
-        listOf("Giving up at the first obstacle", "Soft and easily broken", "Constantly changing schedules"),
+        listOf(
+            "Giving up entirely at the very first sign of a minor obstacle; refusing to push through totally standard challenges",
+            "Soft, malleable, and easily broken by external pressure; possessing absolutely zero internal drive or strong personal boundaries",
+            "Constantly and chaotically changing established release schedules; actively confusing the audience and destroying long-term subscriber trust entirely"
+        ),
         "Powerful"),
     VocabWord("Relentless", "re·LENT·less", "adjective",
         "Oppressively constant; incessant",
         "The relentless pacing of the edit ensured that viewer retention never dipped for a second.",
-        listOf("Stopping frequently for long pauses", "Giving up easily", "Moving at a sluggish pace"),
+        listOf(
+            "Stopping frequently for exceptionally long, unedited pauses that entirely destroy the momentum of the finalized video product",
+            "Giving up entirely easily on a project halfway through production; completely abandoning the work due to minor creative friction",
+            "Moving at an incredibly sluggish, boring pace that guarantees the audience will click away before the halfway mark"
+        ),
         "Powerful"),
     VocabWord("Valiant", "VAL·yant", "adjective",
         "Possessing or showing courage or determination",
         "She made a valiant effort to save the livestream after the power outage.",
-        listOf("Running away from the problem", "Complaining without taking action", "Showing zero effort"),
+        listOf(
+            "Running immediately away from the core problem; absolutely refusing to address a highly public failure or massive mistake",
+            "Complaining loudly and endlessly without taking any measurable action to actually fix the underlying issue currently causing trouble",
+            "Showing absolutely zero effort during a critical presentation; clearly demonstrating a complete lack of respect for the audience"
+        ),
         "Powerful"),
     VocabWord("Inexorable", "in·EX·o·ra·ble", "adjective",
         "Impossible to stop or prevent",
         "The speaker built their argument with an inexorable logic that left absolutely no room for doubt.",
-        listOf("Easily stopped or discouraged", "Moving slowly and hesitantly", "Frequently changing direction"),
+        listOf(
+            "Easily stopped or severely discouraged by the most minor, insignificant counterarguments presented by totally uninformed audience members",
+            "Moving incredibly slowly and highly hesitantly; demonstrating a profound lack of actual confidence in the presented research material",
+            "Frequently and chaotically changing direction mid-sentence; completely unable to construct a single, cohesive, and logically sound overall narrative"
+        ),
         "Powerful"),
     VocabWord("Intrepid", "in·TREP·id", "adjective",
         "Resolute fearlessness, endurance, and fortitude",
         "The intrepid journalist asked the precise questions everyone else was too afraid to voice.",
-        listOf("Deeply afraid of public speaking", "Easily intimidated by authority", "Cautious to a fault"),
+        listOf(
+            "Deeply and profoundly afraid of public speaking; refusing absolutely to appear on camera under any possible professional circumstances",
+            "Easily and visibly intimidated by established authority figures; refusing to ask difficult or necessary questions during formal interviews",
+            "Cautious to an extreme and crippling fault; entirely unwilling to take even the most minor and highly calculated risk"
+        ),
         "Powerful"),
     VocabWord("Fervent", "FER·vent", "adjective",
         "Having or displaying a passionate intensity",
         "A fervent delivery will often completely cover up minor mistakes in the script itself.",
-        listOf("Showing no emotion at all", "Coldly calculating and precise", "Easily distracted from the goal"),
+        listOf(
+            "Showing absolutely no emotion at all; delivering the entire presentation in a robotic, totally flat, and deeply boring monotone",
+            "Coldly calculating and highly precise; focusing entirely on raw data while completely ignoring the human element of storytelling",
+            "Easily and continually distracted from the primary goal; demonstrating a profound lack of authentic passion for the chosen subject"
+        ),
         "Powerful"),
     VocabWord("Vigorous", "VIG·or·ous", "adjective",
         "Strong, healthy, and full of energy",
         "Use vigorous hand gestures to emphasize the most critical points of your presentation.",
-        listOf("Lethargic and deeply exhausted", "Barely moving at all", "Quiet and highly reserved"),
+        listOf(
+            "Deeply lethargic and appearing entirely exhausted; projecting a severe lack of basic physical energy to the watching audience",
+            "Barely moving at all during the entire presentation; standing stiffly and rigidly like a completely frozen physical statue",
+            "Noticeably quiet and highly reserved; refusing entirely to project their voice or command the physical space of the stage"
+        ),
         "Powerful"),
     VocabWord("Commanding", "com·MAND·ing", "adjective",
         "Indicating or expressing authority; imposing",
         "A commanding stage presence ensures that no one checks their phone while you are speaking.",
-        listOf("Timid and easily ignored", "Pleading for attention", "Whispering nervously"),
+        listOf(
+            "Highly timid and incredibly easily ignored; blending seamlessly into the background and failing to capture any audience attention",
+            "Actively pleading for attention in a desperate and highly unprofessional manner; completely undermining their own perceived expert authority",
+            "Whispering nervously into the microphone; entirely unable to project their voice or speak with any measure of confidence"
+        ),
         "Powerful"),
     VocabWord("Fierce", "FEERS", "adjective",
         "Having or displaying an intense or ferocious aggressiveness",
         "She brought a fierce energy to the debate that left her opponent completely speechless.",
-        listOf("Mild, gentle, and quiet", "Bored and completely apathetic", "Sleeping at the podium"),
+        listOf(
+            "Exceptionally mild, deeply gentle, and overly quiet; completely failing to assert any form of dominance during a public confrontation",
+            "Visibly bored and entirely apathetic; demonstrating absolutely zero passion or genuine interest in the outcome of the ongoing debate",
+            "Literally falling asleep at the podium; demonstrating a historically unprofessional lack of basic respect for the live audience"
+        ),
         "Powerful"),
     VocabWord("Unstoppable", "un·STOP·pa·ble", "adjective",
         "Impossible to stop or prevent",
         "Once he found his speaking rhythm, the momentum of the presentation was completely unstoppable.",
-        listOf("Easily derailed by minor issues", "Hesitant and slow", "Lacking any real drive"),
+        listOf(
+            "Easily and entirely derailed by the most minor and completely expected technical issues during a standard live video broadcast",
+            "Highly hesitant, intensely slow, and visibly unsure; completely unable to build or maintain any form of narrative momentum",
+            "Lacking any real internal drive or personal ambition; entirely willing to abandon the project at the first sign of friction"
+        ),
         "Powerful"),
     VocabWord("Omnipotent", "om·NIP·o·tent", "adjective",
         "Having unlimited power; able to do anything",
         "To a beginner, a master orator can appear almost omnipotent in their control of the room.",
-        listOf("Lacking the ability to speak", "Easily confused by questions", "Dependent on written notes"),
+        listOf(
+            "Completely lacking the basic ability to speak clearly in public; suffering from intense, highly crippling, and entirely unmanaged stage fright",
+            "Easily and visibly confused by standard audience questions; completely incapable of improvising or thinking critically on the spot",
+            "Entirely dependent on highly detailed written notes; completely unable to formulate a cohesive sentence without looking directly down"
+        ),
         "Powerful")
 )
 
@@ -792,7 +1229,6 @@ data class TpState(
     val vocabShowingResult: Boolean = false,
     val transcriptionReadyDismissed: Boolean = false,
 
-    // NEW: TTS State Fields
     val isTtsSpeaking: Boolean = false,
     val isTtsReady: Boolean = false
 )
@@ -820,7 +1256,6 @@ sealed class TpIntent {
     data class AnswerVocabMCQ(val selectedAnswer: String) : TpIntent()
     object DismissTranscriptionReady : TpIntent()
 
-    // NEW: TTS Intents
     object SpeakCurrentWord : TpIntent()
     object SpeakCurrentWordSlow : TpIntent()
     object StopSpeaking : TpIntent()
@@ -828,6 +1263,9 @@ sealed class TpIntent {
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
+    private val prefs = app.getSharedPreferences("tp_prefs", Context.MODE_PRIVATE)
+    private val KEY_SCRIPT = "last_script"
+
     private val _state = MutableStateFlow(TpState(
         availableProfiles = listOf(
             SpeakingProfile("calm", "Turtle", 100, Icons.Default.Add, "Tutorials & Explainers"),
@@ -842,11 +1280,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     private val VOSK_MODEL_ZIP  = "vosk-model.zip"
     private val VOSK_MODEL_DIR  = "vosk-model-small-en-us-0.15"
 
-    // TTS Implementation
     private var tts: TextToSpeech? = null
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     init {
+        // Load saved script from SharedPreferences
+        val saved = prefs.getString(KEY_SCRIPT, "") ?: ""
+        if (saved.isNotBlank()) {
+            _state.update { it.copy(scriptText = saved) }
+        }
+
         tts = TextToSpeech(app) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val result = tts?.setLanguage(Locale.US)
@@ -879,7 +1322,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private fun speakWord(rate: Float) {
-        // Respect silent and vibrate modes (no auto-play annoyance)
         if (audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT ||
             audioManager.ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
             return
@@ -892,7 +1334,12 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun dispatch(intent: TpIntent) {
         when (intent) {
-            is TpIntent.UpdateText -> _state.update { it.copy(scriptText = intent.text) }
+            is TpIntent.UpdateText -> {
+                _state.update { it.copy(scriptText = intent.text) }
+                if (intent.text.length <= 50_000) {
+                    prefs.edit().putString(KEY_SCRIPT, intent.text).apply()
+                }
+            }
             is TpIntent.SelectProfile -> handleProfileSelection(intent.profileId)
             is TpIntent.AdjustWpm -> {
                 val newWpm = (_state.value.wpm + intent.delta).coerceIn(60, 300)
@@ -927,7 +1374,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             }
 
             TpIntent.NextVocabWord -> {
-                tts?.stop() // Instantly kill audio when navigating away
+                tts?.stop()
                 _state.update {
                     var nextIdx = VOCAB_WORDS.indices.random()
                     while (nextIdx == it.currentVocabIndex && VOCAB_WORDS.size > 1) {
@@ -953,7 +1400,6 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                 it.copy(transcriptionReadyDismissed = true)
             }
 
-            // TTS Handlers
             is TpIntent.TtsReady -> _state.update { it.copy(isTtsReady = intent.success) }
             TpIntent.SpeakCurrentWord -> speakWord(1.0f)
             TpIntent.SpeakCurrentWordSlow -> speakWord(0.75f)
@@ -1428,75 +1874,59 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
                 }
 
                 item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(CardForestGreen)
+                            .padding(vertical = 10.dp, horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
-                            Spacer(modifier = Modifier.weight(1f))
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
-                        }
-
-                        Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
-
-                        OutlinedButton(
-                            onClick = { videoPickerLauncher.launch("video/*") },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            border = BorderStroke(UltraThinBorder, SaturatedCrimson),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
-                        }
-
-                        if (state.replicaPhase == ReplicaPhase.ERROR) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF3D1E1E))
-                                    .padding(16.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-                                Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-
-                                if (state.engineDetails.isNotBlank()) {
-                                    Text(
-                                        text = state.engineDetails,
-                                        color = SoftWarmWhite.copy(alpha = 0.6f),
-                                        fontFamily = TpTheme.fonts,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
-                                }
-                            }
-                        }
+                        Text("📝 Paste Script", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+                        Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("▶ Press Play", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+                        Text("  →  ", color = GoldenrodYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("📷 Read on Camera", color = SoftWarmWhite, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
                     }
                 }
 
                 item {
-                    Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = state.scriptText,
-                        onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
-                        modifier = Modifier.fillMaxWidth().height(140.dp).padding(horizontal = 20.dp),
-                        placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
-                        textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
-                            focusedBorderColor = GoldenrodYellow,
-                            cursorColor = GoldenrodYellow
-                        ),
-                        shape = RoundedCornerShape(6.dp)
-                    )
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        Text(text = "MANUAL SCRIPT".uppercase(), fontSize = 11.sp, color = GoldenrodYellow.copy(alpha = 0.7f), fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = state.scriptText,
+                            onValueChange = { viewModel.dispatch(TpIntent.UpdateText(it)) },
+                            modifier = Modifier.fillMaxWidth().height(140.dp),
+                            placeholder = { Text("Or paste your speech here...", color = SoftWarmWhite.copy(alpha = 0.4f), fontFamily = TpTheme.fonts) },
+                            textStyle = LocalTextStyle.current.copy(color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 15.sp, lineHeight = 22.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.3f),
+                                focusedBorderColor = GoldenrodYellow,
+                                cursorColor = GoldenrodYellow
+                            ),
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val wordCount = state.scriptText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+                        val estSecs = if (wordCount == 0) 0 else (wordCount * 60f / state.wpm).roundToInt()
+                        Text(
+                            text = "$wordCount words · ~$estSecs s at ${state.wpm} WPM",
+                            color = SoftWarmWhite.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.End
+                        )
+                    }
+                }
+
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        PrimaryCrimsonButton(text = "▶  Start Teleprompter", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
+                    }
                 }
 
                 item {
@@ -1522,8 +1952,69 @@ fun SetupScreen(state: TpState, viewModel: TpViewModel) {
                 }
 
                 item {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
-                        PrimaryCrimsonButton(text = "Start Manual Teleprompter →", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
+                    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, SaturatedCrimson.copy(alpha = 0.5f))).background(CardForestGreen).padding(16.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "OFFLINE VIDEO REPLICA", fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SaturatedCrimson)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SaturatedCrimson, modifier = Modifier.size(16.dp))
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(SaturatedCrimson.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("ADVANCED", color = SaturatedCrimson, fontSize = 9.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
+                                }
+                            }
+
+                            Text(text = "Upload a video of you reading your script. The app unpacks a bundled 40MB speech model once, then transcribes your video on-device with exact word timestamps — no API key, no cost, works offline.", fontSize = 12.sp, color = SoftWarmWhite.copy(alpha = 0.8f), fontFamily = TpTheme.fonts, modifier = Modifier.padding(vertical = 12.dp))
+
+                            OutlinedButton(
+                                onClick = { videoPickerLauncher.launch("video/*") },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                border = BorderStroke(UltraThinBorder, SaturatedCrimson),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SaturatedCrimson),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = "Select Video to Sync", fontSize = 13.sp, fontFamily = TpTheme.fonts, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            if (state.replicaPhase == ReplicaPhase.ERROR) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF3D1E1E))
+                                        .padding(16.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = SaturatedCrimson, modifier = Modifier.size(20.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(text = "Engine Error", color = SaturatedCrimson, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    Text(text = state.statusMessage, color = SoftWarmWhite, fontFamily = TpTheme.fonts, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+
+                                    if (state.engineDetails.isNotBlank()) {
+                                        Text(
+                                            text = state.engineDetails,
+                                            color = SoftWarmWhite.copy(alpha = 0.6f),
+                                            fontFamily = TpTheme.fonts,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1556,6 +2047,9 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
     }
     val pronunFontSize = 14.sp
 
+    var swipeOffsetX by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 100f
+
     MaterialTheme(colorScheme = TpTheme.studioColorScheme) {
         Box(
             modifier = Modifier
@@ -1563,6 +2057,23 @@ fun VocabLoadingScreen(state: TpState, viewModel: TpViewModel) {
                 .background(DeepForestGreen)
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (swipeOffsetX > swipeThreshold) {
+                                viewModel.dispatch(TpIntent.NextVocabWord)
+                            }
+                            swipeOffsetX = 0f
+                        },
+                        onDragCancel = { swipeOffsetX = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            if (dragAmount > 0) {
+                                swipeOffsetX += dragAmount
+                            }
+                        }
+                    )
+                }
         ) {
             Column(
                 modifier = Modifier
