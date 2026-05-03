@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -45,6 +46,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -146,6 +148,7 @@ data class VocabWord(
 )
 
 val VOCAB_WORDS = listOf(
+    // ── ORIGINAL 20 WORDS ──────────────────────────────────────────────────
     VocabWord("Perspicacious", "per·spi·CA·cious", "adjective",
         "Having a ready insight; shrewd and discerning beyond ordinary perception",
         "A perspicacious speaker always understands their audience before uttering a word.",
@@ -1149,6 +1152,17 @@ enum class ReplicaPhase {
     IDLE, DOWNLOADING_MODEL, EXTRACTING_AUDIO, TRANSCRIBING, READY, ERROR
 }
 
+data class SavedEntry(
+    val id: String,
+    val name: String,
+    val scriptText: String,
+    val wpm: Int,
+    val savedAtMs: Long,
+    val videoUriString: String? = null,
+    val syncedScriptJson: String? = null,
+    val type: String
+)
+
 data class TpState(
     val mode: TeleprompterMode = TeleprompterMode.Setup,
     val scriptText: String = "",
@@ -1185,7 +1199,16 @@ data class TpState(
     val wordsLearned: Int = 0,
     val wordsCorrect: Int = 0,
     val showCompletionBanner: Boolean = false,
-    val bannerVisible: Boolean = false
+    val bannerVisible: Boolean = false,
+
+    val vocabHistory: List<Int> = emptyList(),
+    val vocabHistoryPos: Int = 0,
+    val vocabSwipeForward: Boolean = true,
+
+    val teleprompterHistory: List<SavedEntry> = emptyList(),
+    val studioHistory: List<SavedEntry> = emptyList(),
+    val renamingEntryId: String? = null,
+    val renameText: String = ""
 )
 
 sealed class TpIntent {
@@ -1207,6 +1230,7 @@ sealed class TpIntent {
     object ResetReplicaEngine : TpIntent()
 
     object NextVocabWord : TpIntent()
+    object PrevVocabWord : TpIntent()
     data class AnswerVocabMCQ(val selectedAnswer: String) : TpIntent()
     object DismissTranscriptionReady : TpIntent()
 
@@ -1219,6 +1243,121 @@ sealed class TpIntent {
 
     object ShowCompletionBanner : TpIntent()
     object DismissCompletionBanner : TpIntent()
+
+    object SaveCurrentScript : TpIntent()
+    object SaveCurrentStudio : TpIntent()
+    data class DeleteEntry(val id: String) : TpIntent()
+    data class StartRenameEntry(val id: String, val currentName: String) : TpIntent()
+    data class ConfirmRename(val id: String, val newName: String) : TpIntent()
+    object CancelRename : TpIntent()
+    data class LoadTeleprompterEntry(val entry: SavedEntry) : TpIntent()
+    data class LoadStudioEntry(val entry: SavedEntry, val filesDir: File) : TpIntent()
+    data class UpdateRenameText(val text: String) : TpIntent()
+}
+
+fun List<SyncedLine>.toJson(): String =
+    joinToString(",", "[", "]") {
+        """{"text":"${it.text.replace("\"","'")}","start":${it.startTimeMs},"end":${it.endTimeMs}}"""
+    }
+
+fun String.toSyncedLines(): List<SyncedLine> {
+    return try {
+        val trimmed = trim().removeSurrounding("[", "]")
+        if (trimmed.isBlank()) return emptyList()
+        val lines = mutableListOf<SyncedLine>()
+        var depth = 0; var start = -1
+        for (i in trimmed.indices) {
+            when (trimmed[i]) {
+                '{' -> { if (depth++ == 0) start = i }
+                '}' -> { if (--depth == 0 && start != -1) {
+                    val obj = trimmed.substring(start, i + 1)
+                    val text = Regex(""""text":"([^"]*)"""").find(obj)?.groupValues?.get(1) ?: ""
+                    val startMs = Regex(""""start":(\d+)""").find(obj)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                    val endMs = Regex(""""end":(\d+)""").find(obj)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                    lines.add(SyncedLine(text, startMs, endMs))
+                    start = -1
+                }}
+            }
+        }
+        lines
+    } catch (e: Exception) { emptyList() }
+}
+
+object HistoryStorage {
+    private const val KEY_TP_HISTORY = "tp_history_v1"
+    private const val KEY_STUDIO_HISTORY = "studio_history_v1"
+
+    fun saveTeleprompterHistory(prefs: SharedPreferences, entries: List<SavedEntry>) {
+        val jsonArray = entries.joinToString(",", "[", "]") { entry ->
+            """{"id":"${entry.id}","name":"${entry.name.replace("\"","'")}","scriptText":"${entry.scriptText.replace("\\","\\\\").replace("\"","'")}","wpm":${entry.wpm},"savedAtMs":${entry.savedAtMs}}"""
+        }
+        prefs.edit().putString(KEY_TP_HISTORY, jsonArray).apply()
+    }
+
+    fun loadTeleprompterHistory(prefs: SharedPreferences): List<SavedEntry> {
+        val json = prefs.getString(KEY_TP_HISTORY, "[]") ?: "[]"
+        return parseSavedEntries(json, "teleprompter")
+    }
+
+    fun saveStudioHistory(prefs: SharedPreferences, entries: List<SavedEntry>) {
+        val jsonArray = entries.joinToString(",", "[", "]") { entry ->
+            """{"id":"${entry.id}","name":"${entry.name.replace("\"","'")}","scriptText":"${entry.scriptText.replace("\\","\\\\").replace("\"","'")}","wpm":${entry.wpm},"savedAtMs":${entry.savedAtMs},"videoUri":"${entry.videoUriString ?: ""}","syncedScript":"${(entry.syncedScriptJson ?: "").replace("\"","'")}"}"""
+        }
+        prefs.edit().putString(KEY_STUDIO_HISTORY, jsonArray).apply()
+    }
+
+    fun loadStudioHistory(prefs: SharedPreferences): List<SavedEntry> {
+        val json = prefs.getString(KEY_STUDIO_HISTORY, "[]") ?: "[]"
+        return parseSavedEntries(json, "studio")
+    }
+
+    private fun parseSavedEntries(json: String, type: String): List<SavedEntry> {
+        return try {
+            val trimmed = json.trim().removeSurrounding("[", "]")
+            if (trimmed.isBlank()) return emptyList()
+            val entries = mutableListOf<SavedEntry>()
+            var depth = 0; var start = -1
+            for (i in trimmed.indices) {
+                when (trimmed[i]) {
+                    '{' -> { if (depth++ == 0) start = i }
+                    '}' -> { if (--depth == 0 && start != -1) {
+                        val obj = trimmed.substring(start, i + 1)
+                        parseEntry(obj, type)?.let { entries.add(it) }
+                        start = -1
+                    }}
+                }
+            }
+            entries
+        } catch (e: Exception) { emptyList() }
+    }
+
+    private fun parseEntry(obj: String, type: String): SavedEntry? {
+        return try {
+            fun field(key: String): String? {
+                val pattern = "\"$key\":\"([^\"]*)\""
+                val match = Regex(pattern).find(obj)
+                return match?.groupValues?.get(1)
+            }
+            fun intField(key: String): Int? {
+                val pattern = "\"$key\":(\\d+)"
+                return Regex(pattern).find(obj)?.groupValues?.get(1)?.toIntOrNull()
+            }
+            fun longField(key: String): Long? {
+                val pattern = "\"$key\":(\\d+)"
+                return Regex(pattern).find(obj)?.groupValues?.get(1)?.toLongOrNull()
+            }
+            SavedEntry(
+                id = field("id") ?: UUID.randomUUID().toString(),
+                name = field("name") ?: "Untitled",
+                scriptText = field("scriptText") ?: "",
+                wpm = intField("wpm") ?: 140,
+                savedAtMs = longField("savedAtMs") ?: System.currentTimeMillis(),
+                videoUriString = field("videoUri")?.takeIf { it.isNotBlank() },
+                syncedScriptJson = field("syncedScript")?.takeIf { it.isNotBlank() },
+                type = type
+            )
+        } catch (e: Exception) { null }
+    }
 }
 
 class TpViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -1248,11 +1387,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
         val learned = prefs.getInt("wordsLearned", 0)
         val correct = prefs.getInt("wordsCorrect", 0)
 
+        val tpHistory = HistoryStorage.loadTeleprompterHistory(prefs)
+        val studioHistory = HistoryStorage.loadStudioHistory(prefs)
+
         _state.update { it.copy(
             scriptText = saved,
             streakDays = streak,
             wordsLearned = learned,
-            wordsCorrect = correct
+            wordsCorrect = correct,
+            teleprompterHistory = tpHistory,
+            studioHistory = studioHistory
         )}
 
         tts = TextToSpeech(app) { status ->
@@ -1322,6 +1466,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
 
             TpIntent.StartReading -> {
                 playTone(ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE, 60)
+                dispatch(TpIntent.SaveCurrentScript)
                 handleStartReading()
             }
             TpIntent.StopReading -> handleStopReading()
@@ -1336,8 +1481,8 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             )}
 
             is TpIntent.ProcessReplicaVideo -> {
-                // Cancel any existing transcription and clear old result
                 _state.update { it.copy(
+                    mode = TeleprompterMode.Vocab,
                     replicaPhase = ReplicaPhase.IDLE,
                     syncedScript = emptyList(),
                     replicaVideoUri = null,
@@ -1363,19 +1508,45 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
             TpIntent.NextVocabWord -> {
                 tts?.stop()
                 _state.update {
+                    val trimmedHistory = it.vocabHistory.take(it.vocabHistory.size - it.vocabHistoryPos)
                     var nextIdx = VOCAB_WORDS.indices.random()
                     while (nextIdx == it.currentVocabIndex && VOCAB_WORDS.size > 1) {
                         nextIdx = VOCAB_WORDS.indices.random()
                     }
+                    val newHistory = (trimmedHistory + nextIdx).takeLast(50)
                     it.copy(
                         currentVocabIndex = nextIdx,
+                        vocabHistory = newHistory,
+                        vocabHistoryPos = 0,
                         vocabAnswered = false,
                         vocabSelectedAnswer = "",
                         vocabShowingResult = false,
-                        isTtsSpeaking = false
+                        isTtsSpeaking = false,
+                        vocabSwipeForward = true
                     )
                 }
             }
+
+            TpIntent.PrevVocabWord -> {
+                tts?.stop()
+                _state.update {
+                    val maxBack = it.vocabHistory.size
+                    if (maxBack == 0) return@update it
+                    val newPos = (it.vocabHistoryPos + 1).coerceAtMost(maxBack)
+                    val historyIndex = it.vocabHistory.getOrNull(it.vocabHistory.size - newPos)
+                        ?: return@update it
+                    it.copy(
+                        currentVocabIndex = historyIndex,
+                        vocabHistoryPos = newPos,
+                        vocabAnswered = false,
+                        vocabSelectedAnswer = "",
+                        vocabShowingResult = false,
+                        isTtsSpeaking = false,
+                        vocabSwipeForward = false
+                    )
+                }
+            }
+
             is TpIntent.AnswerVocabMCQ -> {
                 val isCorrect = intent.selectedAnswer == VOCAB_WORDS[_state.value.currentVocabIndex].definition
                 if (isCorrect) {
@@ -1425,6 +1596,106 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(showCompletionBanner = false) }
                 }
             }
+
+            TpIntent.SaveCurrentScript -> {
+                val text = _state.value.scriptText.trim()
+                if (text.isBlank()) return
+                val newEntry = SavedEntry(
+                    id = UUID.randomUUID().toString(),
+                    name = text.split("\\s+".toRegex()).take(5).joinToString(" "),
+                    scriptText = text,
+                    wpm = _state.value.wpm,
+                    savedAtMs = System.currentTimeMillis(),
+                    type = "teleprompter"
+                )
+                val updated = (listOf(newEntry) + _state.value.teleprompterHistory).take(5)
+                HistoryStorage.saveTeleprompterHistory(prefs, updated)
+                _state.update { it.copy(teleprompterHistory = updated) }
+            }
+
+            TpIntent.SaveCurrentStudio -> {
+                val text = _state.value.scriptText.trim()
+                val synced = _state.value.syncedScript
+                if (text.isBlank() || synced.isEmpty()) return
+                val newEntry = SavedEntry(
+                    id = UUID.randomUUID().toString(),
+                    name = text.split("\\s+".toRegex()).take(5).joinToString(" "),
+                    scriptText = text,
+                    wpm = _state.value.wpm,
+                    savedAtMs = System.currentTimeMillis(),
+                    videoUriString = _state.value.replicaVideoUri?.toString(),
+                    syncedScriptJson = synced.toJson(),
+                    type = "studio"
+                )
+                val updated = (listOf(newEntry) + _state.value.studioHistory).take(5)
+                HistoryStorage.saveStudioHistory(prefs, updated)
+                _state.update { it.copy(studioHistory = updated) }
+            }
+
+            is TpIntent.DeleteEntry -> {
+                val isTp = _state.value.teleprompterHistory.any { it.id == intent.id }
+                if (isTp) {
+                    val updated = _state.value.teleprompterHistory.filter { it.id != intent.id }
+                    HistoryStorage.saveTeleprompterHistory(prefs, updated)
+                    _state.update { it.copy(teleprompterHistory = updated) }
+                } else {
+                    val updated = _state.value.studioHistory.filter { it.id != intent.id }
+                    HistoryStorage.saveStudioHistory(prefs, updated)
+                    _state.update { it.copy(studioHistory = updated) }
+                }
+            }
+
+            is TpIntent.StartRenameEntry -> {
+                _state.update { it.copy(renamingEntryId = intent.id, renameText = intent.currentName) }
+            }
+
+            is TpIntent.UpdateRenameText -> {
+                _state.update { it.copy(renameText = intent.text) }
+            }
+
+            is TpIntent.ConfirmRename -> {
+                val newName = intent.newName.trim().take(60).ifBlank { "Untitled" }
+                val tpUpdated = _state.value.teleprompterHistory.map {
+                    if (it.id == intent.id) it.copy(name = newName) else it
+                }
+                val stUpdated = _state.value.studioHistory.map {
+                    if (it.id == intent.id) it.copy(name = newName) else it
+                }
+                HistoryStorage.saveTeleprompterHistory(prefs, tpUpdated)
+                HistoryStorage.saveStudioHistory(prefs, stUpdated)
+                _state.update { it.copy(
+                    teleprompterHistory = tpUpdated,
+                    studioHistory = stUpdated,
+                    renamingEntryId = null,
+                    renameText = ""
+                )}
+            }
+
+            TpIntent.CancelRename -> {
+                _state.update { it.copy(renamingEntryId = null, renameText = "") }
+            }
+
+            is TpIntent.LoadTeleprompterEntry -> {
+                _state.update { it.copy(
+                    scriptText = intent.entry.scriptText,
+                    wpm = intent.entry.wpm
+                )}
+                prefs.edit().putString("last_script", intent.entry.scriptText).apply()
+            }
+
+            is TpIntent.LoadStudioEntry -> {
+                val syncedLines = intent.entry.syncedScriptJson?.toSyncedLines() ?: emptyList()
+                val videoUri = intent.entry.videoUriString?.let { Uri.parse(it) }
+                _state.update { it.copy(
+                    scriptText = intent.entry.scriptText,
+                    wpm = intent.entry.wpm,
+                    syncedScript = syncedLines,
+                    replicaVideoUri = videoUri,
+                    replicaPhase = if (syncedLines.isNotEmpty()) ReplicaPhase.READY else ReplicaPhase.IDLE,
+                    engineDetails = "${syncedLines.size} words aligned",
+                    selectedTab = AppTab.STUDIO
+                )}
+            }
         }
     }
 
@@ -1440,7 +1711,16 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private fun handleStopReading() {
-        _state.update { it.copy(mode = TeleprompterMode.Setup, isPlaying = false) }
+        val returnTab = if (_state.value.replicaPhase == ReplicaPhase.READY) {
+            AppTab.STUDIO
+        } else {
+            AppTab.TELEPROMPTER
+        }
+        _state.update { it.copy(
+            mode = TeleprompterMode.Setup,
+            isPlaying = false,
+            selectedTab = returnTab
+        )}
     }
 
     // =================================================================================================
@@ -1583,6 +1863,7 @@ class TpViewModel(private val app: Application) : AndroidViewModel(app) {
                         bannerVisible = true
                     )
                 }
+                dispatch(TpIntent.SaveCurrentStudio)
             }
         }
     }
@@ -1898,6 +2179,121 @@ fun PrimaryCrimsonButton(text: String, onClick: () -> Unit, enabled: Boolean = t
 }
 
 @Composable
+fun HistoryEntryCard(
+    entry: SavedEntry,
+    isRenaming: Boolean,
+    renameText: String,
+    onLoad: () -> Unit,
+    onDelete: () -> Unit,
+    onStartRename: () -> Unit,
+    onConfirmRename: () -> Unit,
+    onCancelRename: () -> Unit,
+    onRenameTextChange: (String) -> Unit
+) {
+    val timeLabel = remember(entry.savedAtMs) {
+        val diffMs = System.currentTimeMillis() - entry.savedAtMs
+        when {
+            diffMs < 60_000 -> "Just now"
+            diffMs < 3_600_000 -> "${diffMs / 60_000}m ago"
+            diffMs < 86_400_000 -> "${diffMs / 3_600_000}h ago"
+            else -> "${diffMs / 86_400_000}d ago"
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardForestGreen)
+            .border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.15f)), RoundedCornerShape(8.dp))
+            .clickable(enabled = !isRenaming) { onLoad() }
+            .padding(14.dp)
+            .animateContentSize()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                if (isRenaming) {
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = onRenameTextChange,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(
+                            color = SoftWarmWhite,
+                            fontFamily = FontFamily.SansSerif,
+                            fontSize = 14.sp
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = GoldenrodYellow,
+                            unfocusedBorderColor = GoldenrodYellow.copy(alpha = 0.4f),
+                            cursorColor = GoldenrodYellow
+                        ),
+                        shape = RoundedCornerShape(4.dp)
+                    )
+                } else {
+                    Text(
+                        text = entry.name,
+                        color = SoftWarmWhite,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "${entry.wpm} WPM · $timeLabel",
+                        color = SoftWarmWhite.copy(alpha = 0.4f),
+                        fontFamily = FontFamily.SansSerif,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            if (isRenaming) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(onClick = onCancelRename, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel", tint = SoftWarmWhite.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onConfirmRename, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Check, contentDescription = "Confirm", tint = GoldenrodYellow, modifier = Modifier.size(16.dp))
+                    }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                    IconButton(onClick = onStartRename, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Rename", tint = SoftWarmWhite.copy(alpha = 0.4f), modifier = Modifier.size(15.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = SaturatedCrimson.copy(alpha = 0.6f), modifier = Modifier.size(15.dp))
+                    }
+                }
+            }
+        }
+
+        if (!isRenaming && entry.scriptText.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = entry.scriptText,
+                color = SoftWarmWhite.copy(alpha = 0.3f),
+                fontFamily = TpTheme.fonts,
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp
+            )
+        }
+    }
+}
+
+@Composable
 fun TeleprompterTab(state: TpState, viewModel: TpViewModel) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1963,6 +2359,33 @@ fun TeleprompterTab(state: TpState, viewModel: TpViewModel) {
                 PrimaryCrimsonButton(text = "▶  Start Teleprompter", onClick = { viewModel.dispatch(TpIntent.StartReading) }, enabled = state.scriptText.isNotBlank())
             }
         }
+
+        item {
+            if (state.teleprompterHistory.isNotEmpty()) {
+                Text(
+                    text = "RECENT SCRIPTS",
+                    fontSize = 11.sp,
+                    color = GoldenrodYellow.copy(alpha = 0.7f),
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+            }
+        }
+
+        items(state.teleprompterHistory, key = { it.id }) { entry ->
+            HistoryEntryCard(
+                entry = entry,
+                isRenaming = state.renamingEntryId == entry.id,
+                renameText = state.renameText,
+                onLoad = { viewModel.dispatch(TpIntent.LoadTeleprompterEntry(entry)) },
+                onDelete = { viewModel.dispatch(TpIntent.DeleteEntry(entry.id)) },
+                onStartRename = { viewModel.dispatch(TpIntent.StartRenameEntry(entry.id, entry.name)) },
+                onConfirmRename = { viewModel.dispatch(TpIntent.ConfirmRename(entry.id, state.renameText)) },
+                onCancelRename = { viewModel.dispatch(TpIntent.CancelRename) },
+                onRenameTextChange = { viewModel.dispatch(TpIntent.UpdateRenameText(it)) }
+            )
+        }
     }
 }
 
@@ -2009,7 +2432,6 @@ fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
         SymmetricTopBar(title = "Word Master")
 
         if (state.replicaPhase in listOf(ReplicaPhase.DOWNLOADING_MODEL, ReplicaPhase.EXTRACTING_AUDIO, ReplicaPhase.TRANSCRIBING)) {
-            // Passive nudge — user chose to come here, or is already here
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2060,8 +2482,10 @@ fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
                 .pointerInput(state.currentVocabIndex) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if (kotlin.math.abs(swipeOffsetX) > swipeThreshold) {
+                            if (swipeOffsetX < -swipeThreshold) {
                                 viewModel.dispatch(TpIntent.NextVocabWord)
+                            } else if (swipeOffsetX > swipeThreshold) {
+                                viewModel.dispatch(TpIntent.PrevVocabWord)
                             }
                             swipeOffsetX = 0f
                         },
@@ -2076,14 +2500,25 @@ fun WordMasterTab(state: TpState, viewModel: TpViewModel) {
             AnimatedContent(
                 targetState = state.currentVocabIndex,
                 transitionSpec = {
-                    slideInHorizontally(
-                        initialOffsetX = { it },
-                        animationSpec = tween(320, easing = EaseOutCubic)
-                    ) + fadeIn(tween(240)) togetherWith
-                            slideOutHorizontally(
-                                targetOffsetX = { -it / 3 },
-                                animationSpec = tween(280, easing = EaseInCubic)
-                            ) + fadeOut(tween(200))
+                    if (state.vocabSwipeForward) {
+                        slideInHorizontally(
+                            initialOffsetX = { it },
+                            animationSpec = tween(320, easing = EaseOutCubic)
+                        ) + fadeIn(tween(240)) togetherWith
+                                slideOutHorizontally(
+                                    targetOffsetX = { -it / 3 },
+                                    animationSpec = tween(280, easing = EaseInCubic)
+                                ) + fadeOut(tween(200))
+                    } else {
+                        slideInHorizontally(
+                            initialOffsetX = { -it },
+                            animationSpec = tween(320, easing = EaseOutCubic)
+                        ) + fadeIn(tween(240)) togetherWith
+                                slideOutHorizontally(
+                                    targetOffsetX = { it / 3 },
+                                    animationSpec = tween(280, easing = EaseInCubic)
+                                ) + fadeOut(tween(200))
+                    }
                 },
                 label = "VocabCardTransition"
             ) { vocabIndex ->
@@ -2432,6 +2867,17 @@ fun StudioTab(state: TpState, viewModel: TpViewModel) {
             }
 
             item {
+                if (state.replicaPhase == ReplicaPhase.READY) {
+                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        PrimaryCrimsonButton(
+                            text = "▶  Launch Synced Teleprompter",
+                            onClick = { viewModel.dispatch(TpIntent.StartReplicaMode) }
+                        )
+                    }
+                }
+            }
+
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(6.dp)).border(BorderStroke(UltraThinBorder, GoldenrodYellow.copy(alpha = 0.2f))).background(CardForestGreen).clickable { viewModel.dispatch(TpIntent.ToggleCameraPermission) }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -2451,6 +2897,33 @@ fun StudioTab(state: TpState, viewModel: TpViewModel) {
                         )
                     )
                 }
+            }
+
+            item {
+                if (state.studioHistory.isNotEmpty()) {
+                    Text(
+                        text = "RECENT SYNCED VIDEOS",
+                        fontSize = 11.sp,
+                        color = GoldenrodYellow.copy(alpha = 0.7f),
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                }
+            }
+
+            items(state.studioHistory, key = { it.id }) { entry ->
+                HistoryEntryCard(
+                    entry = entry,
+                    isRenaming = state.renamingEntryId == entry.id,
+                    renameText = state.renameText,
+                    onLoad = { viewModel.dispatch(TpIntent.LoadStudioEntry(entry, context.filesDir)) },
+                    onDelete = { viewModel.dispatch(TpIntent.DeleteEntry(entry.id)) },
+                    onStartRename = { viewModel.dispatch(TpIntent.StartRenameEntry(entry.id, entry.name)) },
+                    onConfirmRename = { viewModel.dispatch(TpIntent.ConfirmRename(entry.id, state.renameText)) },
+                    onCancelRename = { viewModel.dispatch(TpIntent.CancelRename) },
+                    onRenameTextChange = { viewModel.dispatch(TpIntent.UpdateRenameText(it)) }
+                )
             }
         }
 
